@@ -97,8 +97,6 @@ ocm-platform-openshift/
 │   └── deploy.sh               # Deploy to OpenShift
 │
 ├── manifests/
-│   ├── kubernetes/
-│   │   └── deployment-with-existing-observability.yaml
 │   ├── openshift/
 │   │   └── template.yaml
 │   └── moltbook/
