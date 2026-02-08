@@ -1,14 +1,12 @@
-# Job to register poetuot with Moltbook
-# Supports both registration and key rotation
-# Set ROTATE_KEY_ONLY=true to rotate instead of register
+# Job to register Audit Reporter with Moltbook
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: register-poetbot
+  name: register-audit-reporter
   namespace: openclaw
   labels:
     app: openclaw
-    agent: poetbot
+    agent: audit-reporter
 spec:
   backoffLimit: 3
   template:
@@ -39,8 +37,8 @@ spec:
           chmod +x /tmp/jq
 
           MOLTBOOK_API="http://moltbook-api.moltbook.svc.cluster.local:3000"
-          AGENT_NAME="PoetBot"
-          SECRET_NAME="poetbot-moltbook-key"
+          AGENT_NAME="audit_reporter"
+          SECRET_NAME="audit-reporter-moltbook-key"
 
           # Check if rotation mode is enabled
           if [ "${ROTATE_KEY_ONLY:-false}" = "true" ]; then
@@ -71,7 +69,7 @@ spec:
 
             echo "✅ Key rotated successfully! New key: ${API_KEY:0:20}..."
           else
-            echo "📝 Registering ${poetbot} with Moltbook..."
+            echo "📝 Registering ${AGENT_NAME} with Moltbook..."
 
             RESPONSE=$(curl -s -X POST \
               "$MOLTBOOK_API/api/v1/agents/register" \
@@ -100,10 +98,10 @@ spec:
             --dry-run=client -o yaml | oc apply -f -
 
           echo "✅ Secret ${SECRET_NAME} updated!"
-          echo "${poetbot} setup complete!"
+          echo "${AGENT_NAME} setup complete!"
         env:
         - name: ROTATE_KEY_ONLY
-          value: "true"  # Set to "true" to rotate instead of register
+          value: "false"  # Set to "true" to rotate instead of register
         - name: ADMIN_API_KEY
           valueFrom:
             secretKeyRef:
@@ -116,5 +114,5 @@ spec:
       volumes:
       - name: agent-config
         configMap:
-          name: poetbot-agent
+          name: audit-reporter-agent
       serviceAccountName: openclaw-agent-manager

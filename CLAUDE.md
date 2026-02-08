@@ -287,17 +287,30 @@ return path.join(os.homedir(), ".openclaw", `workspace-${agentId}`);
 └── workspace-<agent_id>/        # Pattern for any custom agent
 ```
 
-### Common Placeholders to Replace
+### Important: Cluster-Specific Configuration
 
-**CLUSTER_DOMAIN**: Always replace with actual cluster domain!
+**CLUSTER_DOMAIN Placeholder**: Many configuration files use `CLUSTER_DOMAIN` as a placeholder that must be replaced with your actual OpenShift cluster domain.
 
-```json
-// ❌ WRONG
-"baseUrl": "http://service.apps.CLUSTER_DOMAIN/v1"
+**⚠️ CRITICAL**: Always deploy from `manifests-private/` directory, NOT `manifests/`!
 
-// ✅ CORRECT
-"baseUrl": "http://service.apps.ocp-beta-test.nerc.mghpcc.org/v1"
-```
+The `manifests/` directory contains template files with placeholders like `CLUSTER_DOMAIN`. When you run `./scripts/setup.sh`, it:
+1. Detects your cluster domain automatically
+2. Creates `manifests-private/` (git-ignored) with substituted values
+3. Deploys from `manifests-private/`
+
+**Never manually edit or deploy from `manifests/` - always use the setup script!**
+
+If you need to manually configure something after deployment:
+1. Determine your cluster domain: `oc get ingresses.config/cluster -o jsonpath='{.spec.domain}'`
+2. Replace `CLUSTER_DOMAIN` placeholder with the actual value (e.g., `apps.mycluster.com`)
+3. Example:
+   ```json
+   // Template in manifests/
+   "baseUrl": "http://service.apps.CLUSTER_DOMAIN/v1"
+
+   // After substitution in manifests-private/
+   "baseUrl": "http://service.apps.mycluster.com/v1"
+   ```
 
 ## Critical Files
 

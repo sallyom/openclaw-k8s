@@ -54,7 +54,7 @@ data:
       "models": {
         "providers": {
           "nerc": {
-            "baseUrl": "http://gpt-oss-20b-demo-mlflow-agent-tracing.apps.ocp-beta-test.nerc.mghpcc.org/v1",
+            "baseUrl": "http://gpt-oss-20b-demo-mlflow-agent-tracing.apps.CLUSTER_DOMAIN/v1",
             "api": "openai-completions",
             "apiKey": "fakekey",
             "models": [
@@ -83,7 +83,6 @@ data:
           "edit",
           "exec",
           "web_search",
-          "web_fetch",
           "sessions_list",
           "sessions_history",
           "sessions_send",
@@ -91,9 +90,7 @@ data:
           "session_status",
           "message",
           "agents_list",
-          "cron",
-          "memory_search",
-          "memory_get"
+          "cron"
         ],
         "deny": [
           "browser",
@@ -101,6 +98,7 @@ data:
           "nodes",
           "process",
           "tts",
+          "web_fetch",
           "gateway"
         ],
         "exec": {

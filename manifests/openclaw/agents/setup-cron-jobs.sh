@@ -17,71 +17,94 @@ fi
 echo "   Found: $POD"
 echo ""
 
-# Setup cron jobs
-echo "2. Configuring cron jobs..."
+# Delete jobs files and clear all jobs
+echo "2. Clearing existing cron jobs..."
 oc exec -n openclaw $POD -c gateway -- bash -c '
 cd /home/node
 
-echo "  Removing old cron jobs (if they exist)..."
-node /app/dist/index.js cron delete philbot-daily-post 2>/dev/null || true
-node /app/dist/index.js cron delete techbot-daily-post 2>/dev/null || true
-node /app/dist/index.js cron delete poetbot-daily-post 2>/dev/null || true
-
+# Delete jobs.json files first
+echo "  Removing jobs files..."
+rm -fv /home/node/.openclaw/cron/jobs* 2>&1 || echo "  No jobs files found"
+'
 echo ""
-echo "  Creating cron jobs..."
+
+# Setup cron jobs
+echo "3. Creating fresh cron jobs..."
+cat <<'SETUP_SCRIPT' | oc exec -i -n openclaw $POD -c gateway -- bash
+cd /home/node
+
+echo "  Creating fresh cron jobs..."
 
 # PhilBot - Daily at 9AM UTC
-echo "    - PhilBot: Daily at 9AM UTC"
+echo "    - PhilBot: Daily at 9AM UTC (philosophy)"
 node /app/dist/index.js cron add \
   --name "philbot-daily-post" \
   --description "Daily philosophical post" \
   --agent "philbot" \
-  --session "isolated" \
   --cron "0 9 * * *" \
   --tz "UTC" \
-  --message "Read ~/.openclaw/workspace-philbot/.env for MOLTBOOK_API_KEY (dont paste it!). Read ~/.openclaw/skills/moltbook/SKILL.md. Create a thought-provoking philosophical question and post it to the philosophy submolt using curl with your API key." \
-  --thinking "low" \
-  >/dev/null || echo "      (already exists or failed)"
+  --message "CRITICAL: Run ALL steps in ONE command. NEVER expose credentials. Execute: . ~/.openclaw/workspace-philbot/.env && cat > /tmp/post.json <<'EOF' && curl -s -X POST \$MOLTBOOK_API_URL/api/v1/posts -H 'Authorization: Bearer \$MOLTBOOK_API_KEY' -H 'Content-Type: application/json' -d @/tmp/post.json && rm /tmp/post.json
+{\"submolt\":\"philosophy\",\"title\":\"Daily Thought\",\"content\":\"[Your question]\\n\\n#philosophy\"}
+EOF
+" \
+  --thinking "low"
 
-# TechBot - Daily at 10AM UTC
-echo "    - TechBot: Daily at 10AM UTC"
+# Audit Reporter - Every 6 hours
+echo "    - Audit Reporter: Every 6 hours (compliance)"
 node /app/dist/index.js cron add \
-  --name "techbot-daily-post" \
-  --description "Daily technology post" \
-  --agent "techbot" \
-  --session "isolated" \
-  --cron "0 10 * * *" \
+  --name "audit-reporter-scan" \
+  --description "Compliance and governance audit scan" \
+  --agent "audit-reporter" \
+  --cron "0 */6 * * *" \
   --tz "UTC" \
-  --message "Read ~/.openclaw/workspace-techbot/.env for MOLTBOOK_API_KEY (dont paste it!). Read ~/.openclaw/skills/moltbook/SKILL.md. Share an interesting tech insight or news and post it to the technology submolt using curl with your API key." \
-  --thinking "low" \
-  >/dev/null || echo "      (already exists or failed)"
+  --message "CRITICAL: Run ALL steps in ONE command. NEVER expose credentials. Execute: . ~/.openclaw/workspace-audit-reporter/.env && cat > /tmp/post.json <<'EOF' && curl -s -X POST \$MOLTBOOK_API_URL/api/v1/posts -H 'Authorization: Bearer \$MOLTBOOK_API_KEY' -H 'Content-Type: application/json' -d @/tmp/post.json && rm /tmp/post.json
+{\"submolt\":\"compliance\",\"title\":\"Compliance Report\",\"content\":\"Report generated.\\n\\n#compliance\"}
+EOF
+" \
+  --thinking "low"
 
-# PoetBot - Daily at 2PM UTC
-echo "    - PoetBot: Daily at 2PM UTC"
+# Resource Optimizer - Daily at 8AM UTC
+echo "    - Resource Optimizer: Daily at 8AM UTC (cost analysis)"
 node /app/dist/index.js cron add \
-  --name "poetbot-daily-post" \
-  --description "Daily creative writing post" \
-  --agent "poetbot" \
-  --session "isolated" \
-  --cron "0 14 * * *" \
+  --name "resource-optimizer-scan" \
+  --description "Daily cost optimization analysis" \
+  --agent "resource-optimizer" \
+  --cron "0 8 * * *" \
   --tz "UTC" \
-  --message "Read ~/.openclaw/workspace-poetbot/.env for MOLTBOOK_API_KEY (dont paste it!). Read ~/.openclaw/skills/moltbook/SKILL.md. Create a poem or creative writing piece and post it to the general submolt with title starting with Poetry: or Creative: using curl with your API key." \
-  --thinking "low" \
-  >/dev/null || echo "      (already exists or failed)"
+  --message "CRITICAL: Run ALL steps in ONE command. NEVER expose credentials. Execute: . ~/.openclaw/workspace-resource-optimizer/.env && cat > /tmp/post.json <<'EOF' && curl -s -X POST \$MOLTBOOK_API_URL/api/v1/posts -H 'Authorization: Bearer \$MOLTBOOK_API_KEY' -H 'Content-Type: application/json' -d @/tmp/post.json && rm /tmp/post.json
+{\"submolt\":\"cost_resource_analysis\",\"title\":\"Cost Report\",\"content\":\"Report generated.\\n\\n#cost #finops\"}
+EOF
+" \
+  --thinking "low"
+
+# MLOps Monitor - Every 4 hours
+echo "    - MLOps Monitor: Every 4 hours (ML operations)"
+node /app/dist/index.js cron add \
+  --name "mlops-monitor-check" \
+  --description "ML operations monitoring" \
+  --agent "mlops-monitor" \
+  --cron "0 */4 * * *" \
+  --tz "UTC" \
+  --message "CRITICAL: Run ALL steps in ONE command. NEVER expose credentials. Execute: . ~/.openclaw/workspace-mlops-monitor/.env && cat > /tmp/post.json <<'EOF' && curl -s -X POST \$MOLTBOOK_API_URL/api/v1/posts -H 'Authorization: Bearer \$MOLTBOOK_API_KEY' -H 'Content-Type: application/json' -d @/tmp/post.json && rm /tmp/post.json
+{\"submolt\":\"mlops\",\"title\":\"MLOps Update\",\"content\":\"ML monitoring update.\\n\\n#mlops #experiments\"}
+EOF
+" \
+  --thinking "low"
 
 echo ""
 echo "✅ Cron jobs configured!"
-'
+SETUP_SCRIPT
 echo ""
 
 # List cron jobs to verify
-echo "3. Verifying cron jobs..."
+echo "4. Verifying cron jobs..."
 oc exec -n openclaw $POD -c gateway -- bash -c 'cd /home/node && node /app/dist/index.js cron list'
 echo ""
 
 echo "✅ Cron setup complete!"
 echo ""
-echo "Agents will autonomously post to Moltbook on their schedules:"
-echo "  - PhilBot:  9AM UTC daily (philosophy)"
-echo "  - TechBot: 10AM UTC daily (technology)"
-echo "  - PoetBot:  2PM UTC daily (general)"
+echo "Enterprise DevOps agents will autonomously monitor and post to Moltbook:"
+echo "  - PhilBot:            9AM UTC daily (philosophy submolt)"
+echo "  - Audit Reporter:     Every 6 hours (compliance submolt)"
+echo "  - Resource Optimizer: 8AM UTC daily (cost_resource_analysis submolt)"
+echo "  - MLOps Monitor:      Every 4 hours (mlops submolt)"

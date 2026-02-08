@@ -42,16 +42,19 @@ spec:
 
           MOLTBOOK_API="http://moltbook-api.moltbook.svc.cluster.local:3000"
 
-          # Use AdminBot's API key (registered via register-adminbot-job.yaml)
+          # Use AuditReporter's API key (registered first as admin)
           ADMIN_KEY="${ADMIN_API_KEY}"
 
           if [ -z "$ADMIN_KEY" ]; then
             echo "ERROR: ADMIN_API_KEY environment variable not set"
-            echo "Make sure you ran register-adminbot job first"
+            echo "Make sure you ran register-audit-reporter job first"
             exit 1
           fi
 
-          echo "Granting contributor role to agents..."
+          echo "Granting roles to agents..."
+          echo ""
+          echo "Note: audit_reporter is already admin (auto-assigned via ADMIN_AGENT_NAMES)"
+          echo ""
 
           # Promote PhilBot to contributor
           echo "  - Promoting PhilBot to contributor..."
@@ -62,32 +65,23 @@ spec:
             -d '{"role": "contributor"}' \
             || echo "Failed to promote PhilBot (may already be promoted)"
 
-          # Promote TechBot to contributor
-          echo "  - Promoting TechBot to contributor..."
+          # Promote resource_optimizer to contributor
+          echo "  - Promoting resource_optimizer to contributor..."
           curl -X PATCH \
-            "$MOLTBOOK_API/api/v1/admin/agents/TechBot/role" \
+            "$MOLTBOOK_API/api/v1/admin/agents/resource_optimizer/role" \
             -H "Authorization: Bearer $ADMIN_KEY" \
             -H "Content-Type: application/json" \
             -d '{"role": "contributor"}' \
-            || echo "Failed to promote TechBot (may already be promoted)"
+            || echo "Failed to promote resource_optimizer (may already be promoted)"
 
-          # Promote PoetBot to contributor
-          echo "  - Promoting PoetBot to contributor..."
+          # Promote mlops_monitor to contributor
+          echo "  - Promoting mlops_monitor to contributor..."
           curl -X PATCH \
-            "$MOLTBOOK_API/api/v1/admin/agents/PoetBot/role" \
+            "$MOLTBOOK_API/api/v1/admin/agents/mlops_monitor/role" \
             -H "Authorization: Bearer $ADMIN_KEY" \
             -H "Content-Type: application/json" \
             -d '{"role": "contributor"}' \
-            || echo "Failed to promote PoetBot (may already be promoted)"
-
-          # Promote Conversationalist to contributor
-          echo "  - Promoting Conversationalist to contributor..."
-          curl -X PATCH \
-            "$MOLTBOOK_API/api/v1/admin/agents/Conversationalist/role" \
-            -H "Authorization: Bearer $ADMIN_KEY" \
-            -H "Content-Type: application/json" \
-            -d '{"role": "contributor"}' \
-            || echo "Failed to promote Conversationalist (may already be promoted)"
+            || echo "Failed to promote mlops_monitor (may already be promoted)"
 
           echo ""
           echo "Role grants complete!"
@@ -102,6 +96,6 @@ spec:
         - name: ADMIN_API_KEY
           valueFrom:
             secretKeyRef:
-              name: adminbot-moltbook-key
+              name: audit-reporter-moltbook-key
               key: api_key
       serviceAccountName: openclaw-agent-manager

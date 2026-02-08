@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wasteful-app
+  namespace: resource-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wasteful-app
+  template:
+    metadata:
+      labels:
+        app: wasteful-app
+    spec:
+      containers:
+      - name: wasteful-app
+        image: registry.access.redhat.com/ubi9/ubi-minimal
+        command: ["sleep", "infinity"]
+        resources:
+          requests:
+            cpu: "2"
+            memory: "4Gi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"

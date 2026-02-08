@@ -94,7 +94,7 @@ spec:
       # Export to MLflow OTLP endpoint (path /v1/traces is auto-appended)
       otlphttp:
         # UPDATE TO MATCH YOUR MLFLOW ENDPOINT - Do not append /v1/traces
-        endpoint: https://mlflow-route-apps.cluser.com
+        endpoint: https://mlflow-route-mlflow.apps.CLUSTER_DOMAIN
         headers:
           x-mlflow-experiment-id: "4"
           x-mlflow-workspace: "openclaw"

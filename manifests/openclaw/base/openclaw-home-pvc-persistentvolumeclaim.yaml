@@ -1,5 +1,9 @@
 # PersistentVolumeClaim: openclaw-home-pvc
-# Stores OpenClaw configuration and pairing data
+# Stores OpenClaw configuration, agent state, session transcripts, and usage data
+# Agent state includes:
+#   - Session transcripts (*.jsonl) for usage tracking
+#   - Agent workspace metadata
+#   - Pairing/auth data
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -12,4 +16,4 @@ spec:
   - ReadWriteOnce
   resources:
     requests:
-      storage: 1Gi
+      storage: 20Gi  # Increased for session transcripts and usage data

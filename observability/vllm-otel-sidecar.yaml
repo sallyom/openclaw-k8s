@@ -1,0 +1,113 @@
+---
+# OpenTelemetryCollector for vLLM (sidecar mode)
+# Auto-injected into pods with annotation: sidecar.opentelemetry.io/inject: "vllm-sidecar"
+#
+# This sidecar enables dual-export to multiple MLflow experiments:
+# - Experiment 2: For teammate's testing
+# - Experiment 4: For OpenClaw distributed tracing
+apiVersion: opentelemetry.io/v1alpha1
+kind: OpenTelemetryCollector
+metadata:
+  name: vllm-sidecar
+  namespace: demo-mlflow-agent-tracing
+spec:
+  mode: sidecar
+
+  config: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 127.0.0.1:4317
+          http:
+            endpoint: 127.0.0.1:4318
+
+    processors:
+      # Batch processor for better performance
+      batch:
+        timeout: 5s
+        send_batch_size: 100
+
+      # Memory limiter to prevent OOM
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 256
+        spike_limit_mib: 64
+
+      # Resource processor to add vLLM metadata
+      resource:
+        attributes:
+          - key: service.namespace
+            value: demo-mlflow-agent-tracing
+            action: upsert
+          - key: k8s.namespace.name
+            value: demo-mlflow-agent-tracing
+            action: upsert
+          - key: deployment.environment
+            value: production
+            action: upsert
+
+      # Filter for experiment 2: Only direct vLLM calls (root spans, no remote parent)
+      # This filters OUT OpenClaw-initiated traces
+      filter/direct:
+        error_mode: ignore
+        traces:
+          span:
+            # Drop child spans (have parent = from OpenClaw)
+            # Keep root spans (no parent = direct vLLM API calls)
+            - 'IsRootSpan() == false'
+
+      # Filter for experiment 4: Only OpenClaw-initiated traces (traces with remote parent)
+      # This filters OUT direct vLLM API calls (which have no parent context)
+      filter/openclaw:
+        error_mode: ignore
+        traces:
+          span:
+            # Drop root spans (no parent = direct vLLM API calls)
+            # Keep child spans (have parent_span_id = came from OpenClaw via traceparent header)
+            - 'IsRootSpan() == true'
+
+    exporters:
+      # Export to MLflow Experiment 2 (teammate's testing)
+      otlphttp/experiment2:
+        endpoint: https://mlflow-route-mlflow.apps.CLUSTER_DOMAIN
+        headers:
+          x-mlflow-experiment-id: "2"
+          x-mlflow-workspace: "vllm-testing"
+        tls:
+          insecure: false
+
+      # Export to MLflow Experiment 4 (OpenClaw distributed tracing)
+      otlphttp/experiment4:
+        endpoint: https://mlflow-route-mlflow.apps.CLUSTER_DOMAIN
+        headers:
+          x-mlflow-experiment-id: "4"
+          x-mlflow-workspace: "openclaw"
+        tls:
+          insecure: false
+
+      # Debug exporter for troubleshooting
+      debug:
+        verbosity: normal
+
+    service:
+      pipelines:
+        # Pipeline for experiment 2: Only direct vLLM calls (teammate's testing)
+        traces/experiment2:
+          receivers: [otlp]
+          processors: [memory_limiter, resource, filter/direct, batch]
+          exporters: [otlphttp/experiment2, debug]
+
+        # Pipeline for experiment 4: Only OpenClaw-initiated traces (distributed tracing)
+        traces/experiment4:
+          receivers: [otlp]
+          processors: [memory_limiter, resource, filter/openclaw, batch]
+          exporters: [otlphttp/experiment4]
+
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 100m
+    limits:
+      memory: 256Mi
+      cpu: 200m

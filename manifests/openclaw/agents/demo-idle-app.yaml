@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: idle-app
+  namespace: resource-demo
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: idle-app
+  template:
+    metadata:
+      labels:
+        app: idle-app
+    spec:
+      containers:
+      - name: idle-app
+        image: registry.access.redhat.com/ubi9/ubi-minimal
+        command: ["sleep", "infinity"]

@@ -270,10 +270,37 @@ redirectURIs:
 grantMethod: auto
 EOF
 
-# Copy agent configs to private overlay
+# Copy agent configs to private overlay and patch CLUSTER_DOMAIN
 if [ -d "$REPO_ROOT/manifests/openclaw/agents" ]; then
-  cp -r "$REPO_ROOT/manifests/openclaw/agents" "$REPO_ROOT/manifests-private/openclaw/"
+  mkdir -p "$REPO_ROOT/manifests-private/openclaw/agents"
+  # Copy all agent files except config patches
+  for file in "$REPO_ROOT/manifests/openclaw/agents"/*.yaml; do
+    filename=$(basename "$file")
+    if [ "$filename" != "agents-config-patch.yaml" ] && [ "$filename" != "agents-config-patch-private.yaml" ]; then
+      cp "$file" "$REPO_ROOT/manifests-private/openclaw/agents/"
+    fi
+  done
+
+  # Create agents-config-patch-private.yaml in agents dir for add-on agents (gitignored)
+  if [ -f "$REPO_ROOT/manifests/openclaw/agents/agents-config-patch.yaml" ]; then
+    sed "s/CLUSTER_DOMAIN/$CLUSTER_DOMAIN/g" \
+      "$REPO_ROOT/manifests/openclaw/agents/agents-config-patch.yaml" > \
+      "$REPO_ROOT/manifests/openclaw/agents/agents-config-patch-private.yaml"
+    log_success "Created agents-config-patch-private.yaml for add-on agents"
+  fi
 fi
+
+# Create observability patches with CLUSTER_DOMAIN substitution
+mkdir -p "$REPO_ROOT/manifests-private/observability"
+
+# Patch all sidecar configurations
+for sidecar_file in vllm-otel-sidecar.yaml openclaw-otel-sidecar.yaml moltbook-otel-sidecar.yaml; do
+  if [ -f "$REPO_ROOT/observability/$sidecar_file" ]; then
+    sed "s/CLUSTER_DOMAIN/$CLUSTER_DOMAIN/g" \
+      "$REPO_ROOT/observability/$sidecar_file" > \
+      "$REPO_ROOT/manifests-private/observability/$sidecar_file"
+  fi
+done
 
 log_success "OpenClaw overlay created with security hardening"
 echo ""
@@ -408,11 +435,16 @@ echo ""
 
 if [[ "$DEPLOY_AGENTS" != "n" && "$DEPLOY_AGENTS" != "N" ]]; then
   log_info "Deploying agent ConfigMaps..."
-  oc apply -f "$REPO_ROOT/manifests/openclaw/agents/adminbot-agent.yaml"
-  oc apply -f "$REPO_ROOT/manifests/openclaw/agents/philbot-agent.yaml"
-  oc apply -f "$REPO_ROOT/manifests/openclaw/agents/techbot-agent.yaml"
-  oc apply -f "$REPO_ROOT/manifests/openclaw/agents/poetbot-agent.yaml"
+  oc apply -f "$REPO_ROOT/manifests-private/openclaw/agents/adminbot-agent.yaml"
+  oc apply -f "$REPO_ROOT/manifests-private/openclaw/agents/philbot-agent.yaml"
+  oc apply -f "$REPO_ROOT/manifests-private/openclaw/agents/techbot-agent.yaml"
+  oc apply -f "$REPO_ROOT/manifests-private/openclaw/agents/poetbot-agent.yaml"
   log_success "Agent ConfigMaps deployed"
+  echo ""
+
+  log_info "Deploying agent configuration (with cluster domain)..."
+  oc apply -f "$REPO_ROOT/manifests-private/openclaw/agents/agents-config-patch.yaml"
+  log_success "Agent configuration deployed"
   echo ""
 
   log_info "Deploying skills (using kustomize)..."
@@ -422,28 +454,28 @@ if [[ "$DEPLOY_AGENTS" != "n" && "$DEPLOY_AGENTS" != "N" ]]; then
 
   log_info "Registering agents with Moltbook..."
   # Register AdminBot (gets admin role automatically)
-  oc apply -f "$REPO_ROOT/manifests/openclaw/agents/register-adminbot-job.yaml"
+  oc apply -f "$REPO_ROOT/manifests-private/openclaw/agents/register-adminbot-job.yaml"
   sleep 5
   oc wait --for=condition=complete --timeout=60s job/register-adminbot -n openclaw 2>/dev/null || log_warn "AdminBot registration still running"
 
   # Register other agents
-  oc apply -f "$REPO_ROOT/manifests/openclaw/agents/register-philbot-job.yaml"
-  oc apply -f "$REPO_ROOT/manifests/openclaw/agents/register-techbot-job.yaml"
-  oc apply -f "$REPO_ROOT/manifests/openclaw/agents/register-poetbot-job.yaml"
+  oc apply -f "$REPO_ROOT/manifests-private/openclaw/agents/register-philbot-job.yaml"
+  oc apply -f "$REPO_ROOT/manifests-private/openclaw/agents/register-techbot-job.yaml"
+  oc apply -f "$REPO_ROOT/manifests-private/openclaw/agents/register-poetbot-job.yaml"
   sleep 5
   oc wait --for=condition=complete --timeout=60s job/register-philbot -n openclaw 2>/dev/null || log_warn "Agent registration still running"
   log_success "Agents registered"
   echo ""
 
   log_info "Granting contributor roles..."
-  oc apply -f "$REPO_ROOT/manifests/openclaw/agents/grant-roles-job.yaml"
+  oc apply -f "$REPO_ROOT/manifests-private/openclaw/agents/grant-roles-job.yaml"
   sleep 5
   oc wait --for=condition=complete --timeout=60s job/grant-agent-roles -n openclaw 2>/dev/null || log_warn "Role grants still running"
   log_success "Roles granted"
   echo ""
 
   log_info "Deploying cron setup script..."
-  oc apply -f "$REPO_ROOT/manifests/openclaw/agents/cron-setup-script-configmap.yaml"
+  oc apply -f "$REPO_ROOT/manifests-private/openclaw/agents/cron-setup-script-configmap.yaml"
   log_success "Cron setup script deployed"
   echo ""
 

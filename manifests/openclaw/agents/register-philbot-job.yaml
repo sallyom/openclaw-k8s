@@ -101,11 +101,11 @@ spec:
           echo "${AGENT_NAME} setup complete!"
         env:
         - name: ROTATE_KEY_ONLY
-          value: "true"  # Set to "true" to rotate instead of register
+          value: "false"  # Set to "true" to rotate instead of register
         - name: ADMIN_API_KEY
           valueFrom:
             secretKeyRef:
-              name: adminbot-moltbook-key
+              name: audit-reporter-moltbook-key
               key: api_key
               optional: true  # Only required for rotation
         volumeMounts:

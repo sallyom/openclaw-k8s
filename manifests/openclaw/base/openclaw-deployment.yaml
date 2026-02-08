@@ -45,6 +45,12 @@ spec:
           mkdir -p /home/node/.openclaw/workspace
           mkdir -p /home/node/.openclaw/skills
 
+          # Create agents directory structure for session transcripts and usage tracking
+          # Session transcripts are stored at: ~/.openclaw/agents/<agent_id>/sessions/*.jsonl
+          mkdir -p /home/node/.openclaw/agents
+          mkdir -p /home/node/.openclaw/agents/shadowman/sessions
+          mkdir -p /home/node/.openclaw/agents/shadowman/agent
+
           # Copy shadowman agent config (included in core deployment)
           cp /agents/shadowman/AGENTS.md /home/node/.openclaw/workspace/AGENTS.md 2>/dev/null || echo "Warning: shadowman AGENTS.md not found"
           cp /agents/shadowman/agent.json /home/node/.openclaw/workspace/agent.json 2>/dev/null || echo "Warning: shadowman agent.json not found"
@@ -53,9 +59,11 @@ spec:
           chmod -R 775 /home/node/.openclaw
 
           echo "✅ Basic config initialized with shadowman agent"
+          echo "   📊 Session transcripts and usage data will be stored in agents/<agent_id>/sessions/"
           echo "   Run agent-setup-job.yaml to add more agents and cron jobs"
           ls -la /home/node/.openclaw/
           ls -la /home/node/.openclaw/workspace/ || true
+          ls -la /home/node/.openclaw/agents/ || true
         volumeMounts:
         - name: openclaw-home
           mountPath: /home/node/.openclaw

@@ -1,14 +1,12 @@
-# Job to register adminuot with Moltbook
-# Supports both registration and key rotation
-# Set ROTATE_KEY_ONLY=true to rotate instead of register
+# Job to register MLOps Monitor with Moltbook
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: register-adminbot
+  name: register-mlops-monitor
   namespace: openclaw
   labels:
     app: openclaw
-    agent: adminbot
+    agent: mlops-monitor
 spec:
   backoffLimit: 3
   template:
@@ -39,8 +37,8 @@ spec:
           chmod +x /tmp/jq
 
           MOLTBOOK_API="http://moltbook-api.moltbook.svc.cluster.local:3000"
-          AGENT_NAME="AdminBot"
-          SECRET_NAME="adminbot-moltbook-key"
+          AGENT_NAME="mlops_monitor"
+          SECRET_NAME="mlops-monitor-moltbook-key"
 
           # Check if rotation mode is enabled
           if [ "${ROTATE_KEY_ONLY:-false}" = "true" ]; then
@@ -71,7 +69,7 @@ spec:
 
             echo "✅ Key rotated successfully! New key: ${API_KEY:0:20}..."
           else
-            echo "📝 Registering ${adminbot} with Moltbook..."
+            echo "📝 Registering ${AGENT_NAME} with Moltbook..."
 
             RESPONSE=$(curl -s -X POST \
               "$MOLTBOOK_API/api/v1/agents/register" \
@@ -100,14 +98,14 @@ spec:
             --dry-run=client -o yaml | oc apply -f -
 
           echo "✅ Secret ${SECRET_NAME} updated!"
-          echo "${adminbot} setup complete!"
+          echo "${AGENT_NAME} setup complete!"
         env:
         - name: ROTATE_KEY_ONLY
           value: "false"  # Set to "true" to rotate instead of register
         - name: ADMIN_API_KEY
           valueFrom:
             secretKeyRef:
-              name: adminbot-moltbook-key
+              name: audit-reporter-moltbook-key
               key: api_key
               optional: true  # Only required for rotation
         volumeMounts:
@@ -116,5 +114,5 @@ spec:
       volumes:
       - name: agent-config
         configMap:
-          name: adminbot-agent
+          name: mlops-monitor-agent
       serviceAccountName: openclaw-agent-manager

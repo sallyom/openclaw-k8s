@@ -8,11 +8,12 @@ set -e
 echo "🧹 Removing custom agents from OpenClaw..."
 echo ""
 
-# Get running pod
-echo "1. Finding OpenClaw pod..."
-POD=$(oc get pods -n openclaw -l app=openclaw -o jsonpath='{.items[0].metadata.name}')
+# Get running pod (exclude job pods)
+echo "1. Finding OpenClaw deployment pod..."
+POD=$(oc get pods -n openclaw -l app=openclaw --field-selector=status.phase=Running -o json | \
+  jq -r '.items[] | select(.metadata.ownerReferences[0].kind=="ReplicaSet") | .metadata.name' | head -1)
 if [ -z "$POD" ]; then
-  echo "❌ ERROR: No OpenClaw pod found"
+  echo "❌ ERROR: No OpenClaw deployment pod found"
   exit 1
 fi
 echo "   Found: $POD"
@@ -24,10 +25,12 @@ oc exec -n openclaw $POD -c gateway -- bash -c '
 cd /home/node
 echo "   - Deleting philbot-daily-post..."
 node /app/dist/index.js cron delete philbot-daily-post 2>/dev/null || echo "     (not found)"
-echo "   - Deleting techbot-daily-post..."
-node /app/dist/index.js cron delete techbot-daily-post 2>/dev/null || echo "     (not found)"
-echo "   - Deleting poetbot-daily-post..."
-node /app/dist/index.js cron delete poetbot-daily-post 2>/dev/null || echo "     (not found)"
+echo "   - Deleting audit-reporter-scan..."
+node /app/dist/index.js cron delete audit-reporter-scan 2>/dev/null || echo "     (not found)"
+echo "   - Deleting resource-optimizer-scan..."
+node /app/dist/index.js cron delete resource-optimizer-scan 2>/dev/null || echo "     (not found)"
+echo "   - Deleting mlops-monitor-check..."
+node /app/dist/index.js cron delete mlops-monitor-check 2>/dev/null || echo "     (not found)"
 '
 echo "   ✅ Cron jobs removed"
 echo ""
@@ -37,12 +40,12 @@ echo "3. Removing agent workspace directories..."
 oc exec -n openclaw $POD -c gateway -- sh -c '
   echo "   - Removing workspace-philbot..."
   rm -rf ~/.openclaw/workspace-philbot 2>/dev/null || echo "     (not found)"
-  echo "   - Removing workspace-techbot..."
-  rm -rf ~/.openclaw/workspace-techbot 2>/dev/null || echo "     (not found)"
-  echo "   - Removing workspace-poetbot..."
-  rm -rf ~/.openclaw/workspace-poetbot 2>/dev/null || echo "     (not found)"
-  echo "   - Removing workspace-adminbot..."
-  rm -rf ~/.openclaw/workspace-adminbot 2>/dev/null || echo "     (not found)"
+  echo "   - Removing workspace-audit-reporter..."
+  rm -rf ~/.openclaw/workspace-audit-reporter 2>/dev/null || echo "     (not found)"
+  echo "   - Removing workspace-resource-optimizer..."
+  rm -rf ~/.openclaw/workspace-resource-optimizer 2>/dev/null || echo "     (not found)"
+  echo "   - Removing workspace-mlops-monitor..."
+  rm -rf ~/.openclaw/workspace-mlops-monitor 2>/dev/null || echo "     (not found)"
 '
 echo "   ✅ Agent workspaces removed"
 echo ""
@@ -68,7 +71,7 @@ echo "  - ✅ Agent secrets (kept for future use)"
 echo "  - ✅ Moltbook registrations (agents still registered)"
 echo ""
 echo "Removed:"
-echo "  - ❌ PhilBot, TechBot, PoetBot, AdminBot (from OpenClaw UI)"
+echo "  - ❌ philbot, audit_reporter, resource_optimizer, mlops_monitor (from OpenClaw UI)"
 echo "  - ❌ Agent workspace directories"
 echo "  - ❌ Cron jobs"
 echo ""
