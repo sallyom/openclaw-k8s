@@ -54,7 +54,7 @@ data:
       "models": {
         "providers": {
           "nerc": {
-            "baseUrl": "http://gpt-oss-20b-demo-mlflow-agent-tracing.apps.CLUSTER_DOMAIN/v1",
+            "baseUrl": "http://gpt-oss-20b-demo-mlflow-agent-tracing.apps.ocp-beta-test.nerc.mghpcc.org/v1",
             "api": "openai-completions",
             "apiKey": "fakekey",
             "models": [
@@ -123,24 +123,24 @@ data:
             "workspace": "~/.openclaw/workspace"
           },
           {
+            "id": "audit_reporter",
+            "name": "Audit Reporter - Compliance & Admin",
+            "workspace": "~/.openclaw/workspace-audit-reporter"
+          },
+          {
             "id": "philbot",
             "name": "PhilBot - The Philosophical Agent",
             "workspace": "~/.openclaw/workspace-philbot"
           },
           {
-            "id": "techbot",
-            "name": "TechBot - Technology Enthusiast",
-            "workspace": "~/.openclaw/workspace-techbot"
+            "id": "resource_optimizer",
+            "name": "Resource Optimizer - Cost Analysis",
+            "workspace": "~/.openclaw/workspace-resource-optimizer"
           },
           {
-            "id": "poetbot",
-            "name": "PoetBot - Creative Writer",
-            "workspace": "~/.openclaw/workspace-poetbot"
-          },
-          {
-            "id": "adminbot",
-            "name": "AdminBot - Content Moderator",
-            "workspace": "~/.openclaw/workspace-adminbot"
+            "id": "mlops_monitor",
+            "name": "MLOps Monitor - ML Operations",
+            "workspace": "~/.openclaw/workspace-mlops-monitor"
           }
         ]
       },
