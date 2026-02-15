@@ -5,8 +5,9 @@
 # Use this for complete deployment of OpenClaw + Moltbook + Agents
 #
 # Usage:
-#   ./setup.sh           # Deploy to OpenShift (default)
-#   ./setup.sh --k8s     # Deploy to vanilla Kubernetes (minikube, kind, etc.)
+#   ./setup.sh                    # Deploy to OpenShift (default)
+#   ./setup.sh --k8s              # Deploy to vanilla Kubernetes (minikube, kind, etc.)
+#   ./setup.sh --skip-moltbook    # Deploy OpenClaw only (no Moltbook)
 #
 # This script:
 #   - Generates all secrets (gateway, OAuth, JWT, PostgreSQL) into .env
@@ -37,9 +38,11 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Parse flags
 K8S_MODE=false
+SKIP_MOLTBOOK=false
 for arg in "$@"; do
   case "$arg" in
     --k8s) K8S_MODE=true ;;
+    --skip-moltbook) SKIP_MOLTBOOK=true ;;
   esac
 done
 
@@ -93,12 +96,16 @@ generate_cookie_secret() {
 
 echo ""
 echo "╔════════════════════════════════════════════════════════════╗"
-if $K8S_MODE; then
+if $SKIP_MOLTBOOK; then
+echo "║  OpenClaw Deployment Setup (OpenClaw only)               ║"
+elif $K8S_MODE; then
 echo "║  OpenClaw + Moltbook Deployment Setup (Kubernetes mode)   ║"
 else
 echo "║  OpenClaw + Moltbook Deployment Setup (OpenShift mode)    ║"
 fi
+if ! $SKIP_MOLTBOOK; then
 echo "║  Safe-For-Work AI Agent Social Network                    ║"
+fi
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -168,7 +175,11 @@ log_success "OpenClaw namespace: $OPENCLAW_NAMESPACE"
 echo ""
 
 # Confirm deployment
-log_warn "This will deploy to namespaces: $OPENCLAW_NAMESPACE, moltbook"
+if $SKIP_MOLTBOOK; then
+  log_warn "This will deploy OpenClaw only to namespace: $OPENCLAW_NAMESPACE"
+else
+  log_warn "This will deploy to namespaces: $OPENCLAW_NAMESPACE, moltbook"
+fi
 read -p "Continue? (y/N): " -n 1 -r
 echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -187,45 +198,87 @@ if [ -f "$REPO_ROOT/.env" ]; then
   log_success "Secrets loaded from .env"
   echo ""
 
+  # Default any missing variables to empty (handles corrupted/partial .env files)
+  OPENCLAW_GATEWAY_TOKEN="${OPENCLAW_GATEWAY_TOKEN:-}"
+  OPENCLAW_OAUTH_CLIENT_SECRET="${OPENCLAW_OAUTH_CLIENT_SECRET:-}"
+  OPENCLAW_OAUTH_COOKIE_SECRET="${OPENCLAW_OAUTH_COOKIE_SECRET:-}"
+  JWT_SECRET="${JWT_SECRET:-}"
+  ADMIN_API_KEY="${ADMIN_API_KEY:-}"
+  POSTGRES_DB="${POSTGRES_DB:-}"
+  POSTGRES_USER="${POSTGRES_USER:-}"
+  POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}"
+  MOLTBOOK_OAUTH_CLIENT_SECRET="${MOLTBOOK_OAUTH_CLIENT_SECRET:-}"
+  MOLTBOOK_OAUTH_COOKIE_SECRET="${MOLTBOOK_OAUTH_COOKIE_SECRET:-}"
+  ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
+  MODEL_ENDPOINT="${MODEL_ENDPOINT:-}"
+  VERTEX_ENABLED="${VERTEX_ENABLED:-false}"
+  GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT:-}"
+  GOOGLE_CLOUD_LOCATION="${GOOGLE_CLOUD_LOCATION:-}"
+  VERTEX_SA_JSON_PATH="${VERTEX_SA_JSON_PATH:-}"
+
+  # If the gateway token is missing, the .env is corrupted — regenerate it
+  if [ -z "$OPENCLAW_GATEWAY_TOKEN" ]; then
+    log_warn ".env is missing OPENCLAW_GATEWAY_TOKEN — regenerating secrets"
+    OPENCLAW_GATEWAY_TOKEN=$(generate_secret)
+  fi
+
   # Still allow prefix/namespace override (already set above from prompt)
   # but keep all existing secrets intact
 else
   log_info "Generating random secrets..."
 
   OPENCLAW_GATEWAY_TOKEN=$(generate_secret)
-  JWT_SECRET=$(generate_secret)
-  ADMIN_API_KEY="moltbook_$(openssl rand -hex 32)"
+
+  if $SKIP_MOLTBOOK; then
+    # OpenClaw-only: no Moltbook secrets needed
+    JWT_SECRET=""
+    ADMIN_API_KEY=""
+    POSTGRES_DB=""
+    POSTGRES_USER=""
+    POSTGRES_PASSWORD=""
+    MOLTBOOK_OAUTH_CLIENT_SECRET=""
+    MOLTBOOK_OAUTH_COOKIE_SECRET=""
+  else
+    JWT_SECRET=$(generate_secret)
+    ADMIN_API_KEY="moltbook_$(openssl rand -hex 32)"
+  fi
 
   if $K8S_MODE; then
     # K8s mode: no OAuth proxy, skip OAuth secrets
     OPENCLAW_OAUTH_CLIENT_SECRET=""
     OPENCLAW_OAUTH_COOKIE_SECRET=""
-    MOLTBOOK_OAUTH_CLIENT_SECRET=""
-    MOLTBOOK_OAUTH_COOKIE_SECRET=""
+    if ! $SKIP_MOLTBOOK; then
+      MOLTBOOK_OAUTH_CLIENT_SECRET=""
+      MOLTBOOK_OAUTH_COOKIE_SECRET=""
+    fi
   else
     OPENCLAW_OAUTH_CLIENT_SECRET=$(generate_secret)
     OPENCLAW_OAUTH_COOKIE_SECRET=$(generate_cookie_secret)  # Must be 32 bytes for oauth-proxy
-    MOLTBOOK_OAUTH_CLIENT_SECRET=$(generate_secret)
-    MOLTBOOK_OAUTH_COOKIE_SECRET=$(generate_cookie_secret)  # Must be 32 bytes for oauth-proxy
+    if ! $SKIP_MOLTBOOK; then
+      MOLTBOOK_OAUTH_CLIENT_SECRET=$(generate_secret)
+      MOLTBOOK_OAUTH_COOKIE_SECRET=$(generate_cookie_secret)  # Must be 32 bytes for oauth-proxy
+    fi
   fi
 
   log_success "Secrets generated"
   echo ""
 
-  # Prompt for PostgreSQL credentials
-  log_info "PostgreSQL credentials (or press Enter for defaults):"
-  read -p "  Database name [moltbook]: " POSTGRES_DB
-  POSTGRES_DB=${POSTGRES_DB:-moltbook}
+  if ! $SKIP_MOLTBOOK; then
+    # Prompt for PostgreSQL credentials
+    log_info "PostgreSQL credentials (or press Enter for defaults):"
+    read -p "  Database name [moltbook]: " POSTGRES_DB
+    POSTGRES_DB=${POSTGRES_DB:-moltbook}
 
-  read -p "  Username [moltbook]: " POSTGRES_USER
-  POSTGRES_USER=${POSTGRES_USER:-moltbook}
+    read -p "  Username [moltbook]: " POSTGRES_USER
+    POSTGRES_USER=${POSTGRES_USER:-moltbook}
 
-  read -p "  Password (leave empty to generate): " POSTGRES_PASSWORD
-  if [ -z "$POSTGRES_PASSWORD" ]; then
-    POSTGRES_PASSWORD=$(generate_secret)
-    echo "    → Generated: $POSTGRES_PASSWORD"
+    read -p "  Password (leave empty to generate): " POSTGRES_PASSWORD
+    if [ -z "$POSTGRES_PASSWORD" ]; then
+      POSTGRES_PASSWORD=$(generate_secret)
+      echo "    → Generated: $POSTGRES_PASSWORD"
+    fi
+    echo ""
   fi
-  echo ""
 
   # Prompt for Anthropic API key (optional — for agents that use Anthropic models)
   log_info "Anthropic API key (optional, for agents using Claude models):"
@@ -235,6 +288,44 @@ else
     log_success "Anthropic API key set"
   else
     log_info "Skipped — agents will use in-cluster model only"
+  fi
+  echo ""
+
+  # Prompt for model endpoint (OpenAI-compatible /v1 URL for in-cluster model)
+  log_info "Model endpoint (OpenAI-compatible /v1 URL for in-cluster model):"
+  log_info "  Default: http://vllm.openclaw-llms.svc.cluster.local/v1"
+  log_info "  Options: deploy vLLM (see manifests/openclaw/llm/), use your own, or rely on Anthropic API"
+  read -p "  Enter endpoint (or press Enter for default): " MODEL_ENDPOINT
+  MODEL_ENDPOINT=${MODEL_ENDPOINT:-http://vllm.openclaw-llms.svc.cluster.local/v1}
+  log_success "Model endpoint: $MODEL_ENDPOINT"
+  echo ""
+
+  # Prompt for Google Vertex AI (optional — for Gemini models via GCP)
+  log_info "Google Vertex AI (optional, for Gemini models billed through GCP):"
+  log_info "  Requires a GCP service account JSON key with Vertex AI permissions"
+  read -p "  Enable Google Vertex? (y/N): " -n 1 -r VERTEX_REPLY
+  echo
+  if [[ "$VERTEX_REPLY" =~ ^[Yy]$ ]]; then
+    read -p "  GCP project ID: " GOOGLE_CLOUD_PROJECT
+    if [ -z "$GOOGLE_CLOUD_PROJECT" ]; then
+      log_error "Project ID is required for Vertex AI"
+      exit 1
+    fi
+    read -p "  GCP region [us-central1]: " GOOGLE_CLOUD_LOCATION
+    GOOGLE_CLOUD_LOCATION=${GOOGLE_CLOUD_LOCATION:-us-central1}
+    read -p "  Path to service account JSON key: " VERTEX_SA_JSON_PATH
+    if [ ! -f "$VERTEX_SA_JSON_PATH" ]; then
+      log_error "File not found: $VERTEX_SA_JSON_PATH"
+      exit 1
+    fi
+    VERTEX_ENABLED=true
+    log_success "Vertex AI enabled: project=$GOOGLE_CLOUD_PROJECT region=$GOOGLE_CLOUD_LOCATION"
+  else
+    VERTEX_ENABLED=false
+    GOOGLE_CLOUD_PROJECT=""
+    GOOGLE_CLOUD_LOCATION=""
+    VERTEX_SA_JSON_PATH=""
+    log_info "Skipped"
   fi
   echo ""
 fi
@@ -265,6 +356,11 @@ POSTGRES_PASSWORD=$POSTGRES_PASSWORD
 MOLTBOOK_OAUTH_CLIENT_SECRET=$MOLTBOOK_OAUTH_CLIENT_SECRET
 MOLTBOOK_OAUTH_COOKIE_SECRET=$MOLTBOOK_OAUTH_COOKIE_SECRET
 ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
+MODEL_ENDPOINT=$MODEL_ENDPOINT
+VERTEX_ENABLED=$VERTEX_ENABLED
+GOOGLE_CLOUD_PROJECT=$GOOGLE_CLOUD_PROJECT
+GOOGLE_CLOUD_LOCATION=$GOOGLE_CLOUD_LOCATION
+VERTEX_SA_JSON_PATH=$VERTEX_SA_JSON_PATH
 EOF
 log_success ".env file created at $REPO_ROOT/.env"
 echo ""
@@ -280,8 +376,27 @@ set +a
 export SHADOWMAN_CUSTOM_NAME="${SHADOWMAN_CUSTOM_NAME:-shadowman}"
 export SHADOWMAN_DISPLAY_NAME="${SHADOWMAN_DISPLAY_NAME:-Shadowman}"
 
+# Default model endpoint (for existing .env files that don't have it yet)
+export MODEL_ENDPOINT="${MODEL_ENDPOINT:-http://vllm.openclaw-llms.svc.cluster.local/v1}"
+
+# Vertex defaults (for existing .env files that don't have these yet)
+export VERTEX_ENABLED="${VERTEX_ENABLED:-false}"
+export GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT:-}"
+export GOOGLE_CLOUD_LOCATION="${GOOGLE_CLOUD_LOCATION:-}"
+
+# Agent model priority: Anthropic > Google Vertex > in-cluster
+if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+  export DEFAULT_AGENT_MODEL="anthropic/claude-sonnet-4-5"
+elif [ "${VERTEX_ENABLED:-}" = "true" ]; then
+  export DEFAULT_AGENT_MODEL="google-vertex/gemini-2.5-pro"
+  log_info "Using Google Vertex (Gemini) as default agent model"
+else
+  export DEFAULT_AGENT_MODEL="nerc/openai/gpt-oss-20b"
+  log_info "No Anthropic API key or Vertex — agents will use in-cluster model (${MODEL_ENDPOINT})"
+fi
+
 # Explicit variable list to protect {agentId} and other non-env placeholders
-ENVSUBST_VARS='${CLUSTER_DOMAIN} ${OPENCLAW_PREFIX} ${OPENCLAW_NAMESPACE} ${OPENCLAW_GATEWAY_TOKEN} ${OPENCLAW_OAUTH_CLIENT_SECRET} ${OPENCLAW_OAUTH_COOKIE_SECRET} ${JWT_SECRET} ${ADMIN_API_KEY} ${POSTGRES_DB} ${POSTGRES_USER} ${POSTGRES_PASSWORD} ${MOLTBOOK_OAUTH_CLIENT_SECRET} ${MOLTBOOK_OAUTH_COOKIE_SECRET} ${ANTHROPIC_API_KEY} ${SHADOWMAN_CUSTOM_NAME} ${SHADOWMAN_DISPLAY_NAME}'
+ENVSUBST_VARS='${CLUSTER_DOMAIN} ${OPENCLAW_PREFIX} ${OPENCLAW_NAMESPACE} ${OPENCLAW_GATEWAY_TOKEN} ${OPENCLAW_OAUTH_CLIENT_SECRET} ${OPENCLAW_OAUTH_COOKIE_SECRET} ${JWT_SECRET} ${ADMIN_API_KEY} ${POSTGRES_DB} ${POSTGRES_USER} ${POSTGRES_PASSWORD} ${MOLTBOOK_OAUTH_CLIENT_SECRET} ${MOLTBOOK_OAUTH_COOKIE_SECRET} ${ANTHROPIC_API_KEY} ${SHADOWMAN_CUSTOM_NAME} ${SHADOWMAN_DISPLAY_NAME} ${MODEL_ENDPOINT} ${DEFAULT_AGENT_MODEL} ${GOOGLE_CLOUD_PROJECT} ${GOOGLE_CLOUD_LOCATION}'
 
 for tpl in $(find "$REPO_ROOT/manifests" "$REPO_ROOT/observability" -name '*.envsubst'); do
   yaml="${tpl%.envsubst}"
@@ -298,23 +413,41 @@ else
   OPENCLAW_OVERLAY="$REPO_ROOT/manifests/openclaw/overlays/openshift"
   MOLTBOOK_OVERLAY="$REPO_ROOT/manifests/moltbook/overlays/openshift"
 fi
+# MOLTBOOK_OVERLAY is unused when --skip-moltbook is set, but kept for envsubst templates
 
 # Create namespaces
 log_info "Creating namespaces..."
 $KUBECTL create namespace "$OPENCLAW_NAMESPACE" --dry-run=client -o yaml | $KUBECTL apply -f - > /dev/null
-$KUBECTL create namespace moltbook --dry-run=client -o yaml | $KUBECTL apply -f - > /dev/null
-log_success "Namespaces created: $OPENCLAW_NAMESPACE, moltbook"
-echo ""
-
-# Deploy OTEL collector for Moltbook (OpenClaw uses MLflow directly)
-log_info "Deploying OpenTelemetry collector for Moltbook..."
-if [ -f "$REPO_ROOT/observability/moltbook-otel-collector.yaml" ]; then
-  $KUBECTL apply -f "$REPO_ROOT/observability/moltbook-otel-collector.yaml"
-  log_success "Moltbook OTEL collector deployed"
+if ! $SKIP_MOLTBOOK; then
+  $KUBECTL create namespace moltbook --dry-run=client -o yaml | $KUBECTL apply -f - > /dev/null
+  log_success "Namespaces created: $OPENCLAW_NAMESPACE, moltbook"
 else
-  log_warn "Moltbook OTEL collector config not found (optional)"
+  log_success "Namespace created: $OPENCLAW_NAMESPACE"
 fi
 echo ""
+
+# Create Vertex AI credentials secret (if enabled)
+if [ "${VERTEX_ENABLED:-}" = "true" ] && [ -n "${VERTEX_SA_JSON_PATH:-}" ] && [ -f "${VERTEX_SA_JSON_PATH:-}" ]; then
+  log_info "Creating Vertex AI credentials secret..."
+  $KUBECTL create secret generic vertex-credentials \
+    -n "$OPENCLAW_NAMESPACE" \
+    --from-file=vertex-credentials.json="$VERTEX_SA_JSON_PATH" \
+    --dry-run=client -o yaml | $KUBECTL apply -f -
+  log_success "Vertex AI credentials secret created"
+  echo ""
+fi
+
+if ! $SKIP_MOLTBOOK; then
+  # Deploy OTEL collector for Moltbook (OpenClaw uses MLflow directly)
+  log_info "Deploying OpenTelemetry collector for Moltbook..."
+  if [ -f "$REPO_ROOT/observability/moltbook-otel-collector.yaml" ]; then
+    $KUBECTL apply -f "$REPO_ROOT/observability/moltbook-otel-collector.yaml"
+    log_success "Moltbook OTEL collector deployed"
+  else
+    log_warn "Moltbook OTEL collector config not found (optional)"
+  fi
+  echo ""
+fi
 
 if $K8S_MODE; then
   log_info "Skipping OAuthClient creation (not needed in Kubernetes mode)"
@@ -332,22 +465,26 @@ else
     echo "    oc apply -f $OPENCLAW_OVERLAY/oauthclient.yaml"
   fi
 
-  # Moltbook OAuthClient
-  if oc apply -f "$MOLTBOOK_OVERLAY/oauthclient.yaml" 2>/dev/null; then
-    log_success "Moltbook OAuthClient created"
-  else
-    log_warn "Could not create Moltbook OAuthClient (requires cluster-admin permissions)"
-    log_warn "Ask your cluster admin to run:"
-    echo "    oc apply -f $MOLTBOOK_OVERLAY/oauthclient.yaml"
+  if ! $SKIP_MOLTBOOK; then
+    # Moltbook OAuthClient
+    if oc apply -f "$MOLTBOOK_OVERLAY/oauthclient.yaml" 2>/dev/null; then
+      log_success "Moltbook OAuthClient created"
+    else
+      log_warn "Could not create Moltbook OAuthClient (requires cluster-admin permissions)"
+      log_warn "Ask your cluster admin to run:"
+      echo "    oc apply -f $MOLTBOOK_OVERLAY/oauthclient.yaml"
+    fi
   fi
   echo ""
 fi
 
-# Deploy Moltbook
-log_info "Deploying Moltbook with Guardrails..."
-$KUBECTL apply -k "$MOLTBOOK_OVERLAY"
-log_success "Moltbook deployed"
-echo ""
+if ! $SKIP_MOLTBOOK; then
+  # Deploy Moltbook
+  log_info "Deploying Moltbook with Guardrails..."
+  $KUBECTL apply -k "$MOLTBOOK_OVERLAY"
+  log_success "Moltbook deployed"
+  echo ""
+fi
 
 # Deploy OpenClaw with Security Hardening
 log_info "Deploying OpenClaw Gateway with security hardening..."
@@ -369,51 +506,59 @@ echo ""
 if $K8S_MODE; then
   echo "Access (use port-forward):"
   echo "  kubectl port-forward svc/openclaw 18789:18789 -n $OPENCLAW_NAMESPACE"
-  echo "  kubectl port-forward svc/moltbook-frontend 8080:8080 -n moltbook"
-  echo "  kubectl port-forward svc/moltbook-api 3000:3000 -n moltbook"
+  if ! $SKIP_MOLTBOOK; then
+    echo "  kubectl port-forward svc/moltbook-frontend 8080:8080 -n moltbook"
+    echo "  kubectl port-forward svc/moltbook-api 3000:3000 -n moltbook"
+  fi
   echo ""
   echo "Then open:"
   echo "  OpenClaw Gateway:    http://localhost:18789"
-  echo "  Moltbook Frontend:   http://localhost:8080"
-  echo "  Moltbook API:        http://localhost:3000"
-  echo ""
-  echo "Optional - Tracing (otel-collector + Jaeger):"
-  echo "  # Install otel-collector + Jaeger in the $OPENCLAW_NAMESPACE namespace:"
-  echo "  # See: https://github.com/llm-d/llm-d/tree/main/docs/monitoring"
-  echo "  # Or run: install-otel-collector-jaeger.sh -n $OPENCLAW_NAMESPACE"
-  echo "  #"
-  echo "  # Then access Jaeger UI:"
-  echo "  kubectl port-forward svc/jaeger-collector 16686:16686 -n $OPENCLAW_NAMESPACE"
-  echo "  # Open http://localhost:16686"
+  if ! $SKIP_MOLTBOOK; then
+    echo "  Moltbook Frontend:   http://localhost:8080"
+    echo "  Moltbook API:        http://localhost:3000"
+  fi
   echo ""
 else
   # Get routes
   log_info "Getting routes..."
-  MOLTBOOK_FRONTEND_ROUTE=$(oc get route moltbook-frontend -n moltbook -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
-  MOLTBOOK_API_ROUTE=$(oc get route moltbook-api -n moltbook -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
   OPENCLAW_ROUTE=$(oc get route openclaw -n "$OPENCLAW_NAMESPACE" -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
 
   echo "Access URLs:"
-  echo "  Moltbook Frontend (OAuth): https://${MOLTBOOK_FRONTEND_ROUTE}"
-  echo "  Moltbook API (public):     https://${MOLTBOOK_API_ROUTE}"
   echo "  OpenClaw Gateway:          https://${OPENCLAW_ROUTE}"
+  if ! $SKIP_MOLTBOOK; then
+    MOLTBOOK_FRONTEND_ROUTE=$(oc get route moltbook-frontend -n moltbook -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+    MOLTBOOK_API_ROUTE=$(oc get route moltbook-api -n moltbook -o jsonpath='{.spec.host}' 2>/dev/null || echo "")
+    echo "  Moltbook Frontend (OAuth): https://${MOLTBOOK_FRONTEND_ROUTE}"
+    echo "  Moltbook API (public):     https://${MOLTBOOK_API_ROUTE}"
+  fi
   echo ""
 fi
 
 echo "Credentials:"
 echo "  OpenClaw Gateway Token: $OPENCLAW_GATEWAY_TOKEN"
-echo "  Moltbook Admin API Key: $ADMIN_API_KEY"
-echo "  PostgreSQL:"
-echo "    Database: $POSTGRES_DB"
-echo "    User:     $POSTGRES_USER"
-echo "    Password: $POSTGRES_PASSWORD"
+if ! $SKIP_MOLTBOOK; then
+  echo "  Moltbook Admin API Key: $ADMIN_API_KEY"
+  echo "  PostgreSQL:"
+  echo "    Database: $POSTGRES_DB"
+  echo "    User:     $POSTGRES_USER"
+  echo "    Password: $POSTGRES_PASSWORD"
+fi
 echo ""
 
-echo "Next steps — deploy AI agents:"
-echo "  1. Wait for OpenClaw to be ready:"
-echo "     $KUBECTL rollout status deployment/openclaw -n $OPENCLAW_NAMESPACE --timeout=600s"
-echo "  2. Run the agent setup script:"
-echo "     scripts/setup-agents.sh$(if $K8S_MODE; then echo ' --k8s'; fi)"
+if $SKIP_MOLTBOOK; then
+  echo "Next steps:"
+  echo "  1. Wait for OpenClaw to be ready:"
+  echo "     $KUBECTL rollout status deployment/openclaw -n $OPENCLAW_NAMESPACE --timeout=600s"
+  echo ""
+  echo "  To add Moltbook later, re-run without --skip-moltbook:"
+  echo "     scripts/setup.sh$(if $K8S_MODE; then echo ' --k8s'; fi)"
+else
+  echo "Next steps — deploy AI agents:"
+  echo "  1. Wait for OpenClaw to be ready:"
+  echo "     $KUBECTL rollout status deployment/openclaw -n $OPENCLAW_NAMESPACE --timeout=600s"
+  echo "  2. Run the agent setup script:"
+  echo "     scripts/setup-agents.sh$(if $K8S_MODE; then echo ' --k8s'; fi)"
+fi
 echo ""
 
 log_success "Setup complete!"

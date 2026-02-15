@@ -11,14 +11,14 @@ The observability stack uses **sidecar-based OTEL collectors** that send traces 
 │ Pod: openclaw-xxxxxxxxx-xxxxx (openclaw namespace)              │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  ┌──────────────────┐         ┌──────────────────────────────┐ │
-│  │  Gateway         │  OTLP   │  OTEL Collector Sidecar      │ │
-│  │  Container       │──────▶  │  (auto-injected)             │ │
-│  │                  │  :4318  │                              │ │
-│  │  diagnostics-    │         │  - Batches traces            │ │
-│  │  otel plugin     │         │  - Adds metadata             │ │
-│  └──────────────────┘         │  - Exports to MLflow         │ │
-│                               └──────────────────────────────┘ │
+│  ┌──────────────────┐         ┌──────────────────────────────┐  │
+│  │  Gateway         │  OTLP   │  OTEL Collector Sidecar      │  │
+│  │  Container       │──────▶  │  (auto-injected)             │  │
+│  │                  │  :4318  │                              │  │
+│  │  diagnostics-    │         │  - Batches traces            │  │
+│  │  otel plugin     │         │  - Adds metadata             │  │
+│  └──────────────────┘         │  - Exports to MLflow         │  │
+│                               └──────────────────────────────┘  │
 │                                         │                       │
 └─────────────────────────────────────────┼───────────────────────┘
                                           │
@@ -28,7 +28,7 @@ The observability stack uses **sidecar-based OTEL collectors** that send traces 
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  Service: mlflow-service.mlflow.svc.cluster.local:5000          │
-│  Endpoint: /v1/traces (OTLP standard path)                     │
+│  Endpoint: /v1/traces (OTLP standard path)                      │
 │                                                                 │
 │  Features:                                                      │
 │  ✅ Trace ingestion via OTLP                                    │
@@ -601,62 +601,6 @@ Trace 1 (OpenClaw):
 
 ## Troubleshooting
 
-### Sidecar Not Injected
-
-**Problem:** Pod only has one container (no `otc-container` sidecar)
-
-**Solution:**
-1. Verify the `OpenTelemetryCollector` resource exists:
-   ```bash
-   oc get opentelemetrycollector -n openclaw
-   oc get opentelemetrycollector -n moltbook
-   ```
-
-2. Check the pod annotation is correct:
-   ```bash
-   oc get pod <pod-name> -n openclaw -o yaml | grep -A2 annotations
-   ```
-   Should show: `sidecar.opentelemetry.io/inject: "openclaw-sidecar"`
-
-3. Verify OpenTelemetry Operator is running:
-   ```bash
-   oc get pods -n opentelemetry-operator-system
-   ```
-
-4. Check operator logs for errors:
-   ```bash
-   oc logs -n opentelemetry-operator-system -l app.kubernetes.io/name=opentelemetry-operator
-   ```
-
-### Traces Not Appearing in MLflow
-
-**Problem:** Sidecar is injected but no traces in MLflow
-
-**Solution:**
-1. Check sidecar is receiving traces from application:
-   ```bash
-   oc logs -n openclaw -l app=openclaw -c otc-container
-   ```
-   Look for: `Trace received` or batch export messages
-
-2. Verify MLflow endpoint is reachable from the pod:
-   ```bash
-   oc exec -n $OPENCLAW_NAMESPACE deployment/openclaw -c gateway -- \
-     curl -sv http://mlflow-service.mlflow.svc.cluster.local:5000/v1/traces \
-     -X POST -H "Content-Type: application/x-protobuf" -d ""
-   ```
-   Expected: HTTP 400 (bad request, empty body). If HTTP 403, see "DNS Rebinding / Host Header" section below.
-
-3. Check for export errors in sidecar logs:
-   ```bash
-   oc logs -n $OPENCLAW_NAMESPACE -l app=openclaw -c otc-container | grep -i "error\|rejected\|403"
-   ```
-
-4. Verify the MLflow experiment ID exists:
-   - Open MLflow UI
-   - Check that Experiment 4 exists
-   - If not, create it in the MLflow UI
-
 ### DNS Rebinding / Host Header Rejected (HTTP 403)
 
 **Problem:** Sidecar logs show `Permanent error: rpc error: code = PermissionDenied desc = ... 403`
@@ -676,30 +620,6 @@ oc logs deployment/mlflow-deployment -n mlflow | grep "Allowed hosts"
 # Check for rejections
 oc logs deployment/mlflow-deployment -n mlflow | grep "Rejected request"
 ```
-
-### Sidecar Running Out of Memory
-
-**Problem:** Sidecar pod shows OOMKilled status
-
-**Solution:**
-1. Check memory usage:
-   ```bash
-   oc adm top pods -n openclaw --containers | grep otc-container
-   ```
-
-2. Increase memory limits in the `OpenTelemetryCollector` resource:
-   ```yaml
-   resources:
-     limits:
-       memory: 512Mi  # Increase from 256Mi
-   ```
-
-3. Reduce batch size to lower memory usage:
-   ```yaml
-   processors:
-     batch:
-       send_batch_size: 50  # Reduce from 100
-   ```
 
 ### High Cardinality Warnings
 

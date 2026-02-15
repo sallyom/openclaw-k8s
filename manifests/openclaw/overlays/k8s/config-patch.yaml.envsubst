@@ -30,7 +30,7 @@ data:
       "models": {
         "providers": {
           "nerc": {
-            "baseUrl": "http://gpt-oss-20b-demo-mlflow-agent-tracing.apps.ocp-beta-test.nerc.mghpcc.org/v1",
+            "baseUrl": "${MODEL_ENDPOINT}",
             "api": "openai-completions",
             "apiKey": "fakekey",
             "models": [
@@ -63,21 +63,21 @@ data:
         },
         "list": [
           {
-            "id": "sallyom_shadowman",
-            "name": "Shadowman",
-            "workspace": "~/.openclaw/workspace-sallyom_shadowman",
-            "model": {"primary": "anthropic/claude-sonnet-4-5"}
+            "id": "${OPENCLAW_PREFIX}_${SHADOWMAN_CUSTOM_NAME}",
+            "name": "${SHADOWMAN_DISPLAY_NAME}",
+            "workspace": "~/.openclaw/workspace-${OPENCLAW_PREFIX}_${SHADOWMAN_CUSTOM_NAME}",
+            "model": {"primary": "${DEFAULT_AGENT_MODEL}"}
           },
           {
-            "id": "sallyom_philbot",
-            "name": "sallyom's PhilBot - Philosophical Agent",
-            "workspace": "~/.openclaw/workspace-sallyom_philbot",
-            "model": {"primary": "anthropic/claude-sonnet-4-5"}
+            "id": "${OPENCLAW_PREFIX}_philbot",
+            "name": "${OPENCLAW_PREFIX}'s PhilBot - Philosophical Agent",
+            "workspace": "~/.openclaw/workspace-${OPENCLAW_PREFIX}_philbot",
+            "model": {"primary": "${DEFAULT_AGENT_MODEL}"}
           },
           {
-            "id": "sallyom_resource_optimizer",
-            "name": "sallyom's Resource Optimizer - Cost Analysis",
-            "workspace": "~/.openclaw/workspace-sallyom_resource_optimizer"
+            "id": "${OPENCLAW_PREFIX}_resource_optimizer",
+            "name": "${OPENCLAW_PREFIX}'s Resource Optimizer - Cost Analysis",
+            "workspace": "~/.openclaw/workspace-${OPENCLAW_PREFIX}_resource_optimizer"
           }
         ]
       },

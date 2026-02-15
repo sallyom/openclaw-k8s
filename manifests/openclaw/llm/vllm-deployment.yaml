@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm
+  namespace: openclaw-llms
+  labels:
+    app: vllm
+    component: inference
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm
+      component: inference
+  template:
+    metadata:
+      labels:
+        app: vllm
+        component: inference
+    spec:
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.14.1
+          args:
+            - "--model"
+            - "openai/gpt-oss-20b"
+            - "--port"
+            - "8000"
+            - "--max-model-len"
+            - "32768"
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            - name: HF_HOME
+              value: /model-cache
+            - name: VLLM_USAGE_STATS
+              value: "0"
+          resources:
+            requests:
+              cpu: "4"
+              memory: 32Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "8"
+              memory: 64Gi
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: model-cache
+              mountPath: /model-cache
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: vllm-model-cache

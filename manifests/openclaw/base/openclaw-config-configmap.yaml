@@ -54,7 +54,7 @@ data:
       "models": {
         "providers": {
           "nerc": {
-            "baseUrl": "http://gpt-oss-20b-demo-mlflow-agent-tracing.CLUSTER_DOMAIN/v1",
+            "baseUrl": "http://vllm.openclaw-llms.svc.cluster.local/v1",
             "api": "openai-completions",
             "apiKey": "fakekey",
             "models": [

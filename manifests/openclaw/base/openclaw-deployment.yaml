@@ -178,6 +178,21 @@ spec:
               name: openclaw-secrets
               key: OTEL_EXPORTER_OTLP_ENDPOINT
               optional: true
+        # Google Vertex AI (for Gemini models via GCP)
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: /vertex/vertex-credentials.json
+        - name: GOOGLE_CLOUD_PROJECT
+          valueFrom:
+            secretKeyRef:
+              name: openclaw-secrets
+              key: GOOGLE_CLOUD_PROJECT
+              optional: true
+        - name: GOOGLE_CLOUD_LOCATION
+          valueFrom:
+            secretKeyRef:
+              name: openclaw-secrets
+              key: GOOGLE_CLOUD_LOCATION
+              optional: true
         - name: OTEL_SERVICE_NAME
           value: openclaw
         - name: OTEL_EXPORTER_OTLP_PROTOCOL
@@ -220,6 +235,9 @@ spec:
           mountPath: /home/node/.openclaw
         - name: tmp-volume
           mountPath: /tmp
+        - name: vertex-credentials
+          mountPath: /vertex
+          readOnly: true
         securityContext:
           allowPrivilegeEscalation: false
           runAsNonRoot: true
@@ -242,6 +260,11 @@ spec:
       - name: config-template
         configMap:
           name: openclaw-config
+      # Google Vertex AI credentials (optional — only needed for google-vertex provider)
+      - name: vertex-credentials
+        secret:
+          secretName: vertex-credentials
+          optional: true
       # Shadowman agent (included in core deployment)
       - name: shadowman-agent
         configMap:

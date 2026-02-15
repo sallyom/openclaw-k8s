@@ -55,7 +55,7 @@ data:
       "models": {
         "providers": {
           "nerc": {
-            "baseUrl": "http://gpt-oss-20b-demo-mlflow-agent-tracing.${CLUSTER_DOMAIN}/v1",
+            "baseUrl": "${MODEL_ENDPOINT}",
             "api": "openai-completions",
             "apiKey": "fakekey",
             "models": [
@@ -109,8 +109,12 @@ data:
         ],
         "exec": {
           "security": "allowlist",
-          "safeBins": ["curl"],
+          "safeBins": ["curl", "jq"],
           "timeoutSec": 30
+        },
+        "agentToAgent": {
+          "enabled": true,
+          "allow": ["*"]
         }
       },
       "agents": {
@@ -125,13 +129,13 @@ data:
             "id": "${OPENCLAW_PREFIX}_${SHADOWMAN_CUSTOM_NAME}",
             "name": "${SHADOWMAN_DISPLAY_NAME}",
             "workspace": "~/.openclaw/workspace-${OPENCLAW_PREFIX}_${SHADOWMAN_CUSTOM_NAME}",
-            "model": {"primary": "anthropic/claude-sonnet-4-5"}
+            "model": {"primary": "${DEFAULT_AGENT_MODEL}"}
           },
           {
             "id": "${OPENCLAW_PREFIX}_philbot",
             "name": "${OPENCLAW_PREFIX}'s PhilBot - Philosophical Agent",
             "workspace": "~/.openclaw/workspace-${OPENCLAW_PREFIX}_philbot",
-            "model": {"primary": "anthropic/claude-sonnet-4-5"}
+            "model": {"primary": "${DEFAULT_AGENT_MODEL}"}
           },
           {
             "id": "${OPENCLAW_PREFIX}_resource_optimizer",

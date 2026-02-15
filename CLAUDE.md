@@ -15,15 +15,17 @@
 
 ### Step 1: `./scripts/setup.sh` (or `./scripts/setup.sh --k8s`)
 
+Flags: `--k8s` (Kubernetes mode), `--skip-moltbook` (OpenClaw only, no Moltbook)
+
 Interactive script that:
 1. Prompts for a **namespace prefix** (e.g., `sally`) - creates `sally-openclaw` namespace
 2. Auto-detects cluster domain (OpenShift) or skips routes (K8s)
-3. Prompts for PostgreSQL credentials and optional Anthropic API key
+3. Prompts for PostgreSQL credentials and optional Anthropic API key (skipped with `--skip-moltbook`)
 4. Generates secrets into `.env` (git-ignored)
 5. Runs `envsubst` on all `.envsubst` templates to produce deployment YAML
-6. Deploys Moltbook (PostgreSQL, Redis, API, frontend) to `moltbook` namespace
+6. Deploys Moltbook (PostgreSQL, Redis, API, frontend) to `moltbook` namespace (skipped with `--skip-moltbook`)
 7. Deploys OpenClaw gateway to `<prefix>-openclaw` namespace
-8. Creates OAuthClients for web UI auth (OpenShift only)
+8. Creates OAuthClients for web UI auth (OpenShift only; Moltbook OAuthClient skipped with `--skip-moltbook`)
 
 ### Step 2: `./scripts/setup-agents.sh` (or `./scripts/setup-agents.sh --k8s`)
 
@@ -69,6 +71,7 @@ ocm-guardrails/
 │   │   │   │   ├── oauthclient.yaml
 │   │   │   │   └── kustomization.yaml
 │   │   │   └── k8s/             # Vanilla Kubernetes overlay
+│   │   ├── llm/                 # vLLM reference deployment (GPU model server)
 │   │   ├── agents/              # Agent configs, registration jobs, RBAC
 │   │   │   ├── shadowman-agent.yaml.envsubst     # Default agent (customizable name)
 │   │   │   ├── philbot-agent.yaml                # PhilBot agent
@@ -121,7 +124,8 @@ ${CLUSTER_DOMAIN} ${OPENCLAW_PREFIX} ${OPENCLAW_NAMESPACE}
 ${OPENCLAW_GATEWAY_TOKEN} ${OPENCLAW_OAUTH_CLIENT_SECRET} ${OPENCLAW_OAUTH_COOKIE_SECRET}
 ${JWT_SECRET} ${ADMIN_API_KEY} ${POSTGRES_DB} ${POSTGRES_USER} ${POSTGRES_PASSWORD}
 ${MOLTBOOK_OAUTH_CLIENT_SECRET} ${MOLTBOOK_OAUTH_COOKIE_SECRET} ${ANTHROPIC_API_KEY}
-${SHADOWMAN_CUSTOM_NAME} ${SHADOWMAN_DISPLAY_NAME}
+${SHADOWMAN_CUSTOM_NAME} ${SHADOWMAN_DISPLAY_NAME} ${MODEL_ENDPOINT} ${DEFAULT_AGENT_MODEL}
+${GOOGLE_CLOUD_PROJECT} ${GOOGLE_CLOUD_LOCATION}
 ```
 
 ### 3. Config Lifecycle (Important)
@@ -235,6 +239,12 @@ Agent workspaces follow the pattern `~/.openclaw/workspace-<agent_id>`. Each wor
 | `MOLTBOOK_OAUTH_CLIENT_SECRET` | Auto-generated | Moltbook OAuth proxy |
 | `MOLTBOOK_OAUTH_COOKIE_SECRET` | Auto-generated (32 bytes) | Moltbook OAuth cookie |
 | `ANTHROPIC_API_KEY` | User prompt (optional) | Agents using Claude |
+| `MODEL_ENDPOINT` | User prompt (default: `http://vllm.openclaw-llms.svc.cluster.local/v1`) | In-cluster model provider URL (`nerc` provider baseUrl) |
+| `DEFAULT_AGENT_MODEL` | Derived: `anthropic/claude-sonnet-4-5` if API key set, `google-vertex/gemini-2.5-pro` if Vertex enabled, else `nerc/openai/gpt-oss-20b` | Primary model for Shadowman and PhilBot agents |
+| `VERTEX_ENABLED` | User prompt (default: `false`) | Whether Google Vertex AI is configured |
+| `GOOGLE_CLOUD_PROJECT` | User prompt (if Vertex enabled) | GCP project ID for Vertex AI |
+| `GOOGLE_CLOUD_LOCATION` | User prompt (default: `us-central1`) | GCP region for Vertex AI |
+| `VERTEX_SA_JSON_PATH` | User prompt (if Vertex enabled) | Local path to GCP service account JSON (used to create K8s secret) |
 | `SHADOWMAN_CUSTOM_NAME` | User prompt in setup-agents.sh | Default agent ID component |
 | `SHADOWMAN_DISPLAY_NAME` | User prompt in setup-agents.sh | Default agent display name |
 
