@@ -279,7 +279,7 @@ Each agent gets its own ServiceAccount with minimal RBAC:
 # RoleBinding granting access
 # SA token injected into agent's workspace .env
 ```
-See `manifests/openclaw/agents/resource-optimizer-rbac.yaml.envsubst` for a working example.
+See `manifests/openclaw/agents/resource-optimizer/resource-optimizer-rbac.yaml.envsubst` for a working example.
 
 ### Google A2A Protocol
 OpenClaw has its own A2A implementation via `sessions_send` tool with ping-pong exchange and allow lists. It's not Google's A2A spec, but serves a similar purpose within the gateway.
@@ -457,9 +457,10 @@ The gateway loads `jobs.json` at startup. After writing, restart the deployment 
 |--------|---------|
 | `scripts/setup.sh` | First-time deployment (secrets, namespaces, Moltbook, OpenClaw) |
 | `scripts/setup-agents.sh` | Agent deployment (registration, RBAC, skills, cron jobs) |
+| `scripts/update-jobs.sh` | Update cron jobs and resource-report script without full re-deploy |
 | `scripts/teardown.sh` | Full cleanup (delete resources, namespaces, OAuthClients) |
 | `manifests/openclaw/agents/remove-custom-agents.sh` | Remove agents only (keep gateway) |
-| `manifests/openclaw/agents/setup-resource-optimizer-rbac.sh` | Manual RBAC setup for resource-optimizer |
+| `manifests/openclaw/agents/resource-optimizer/setup-resource-optimizer-rbac.sh` | Manual RBAC setup for resource-optimizer |
 | `manifests/openclaw/skills/install-moltbook-skill.sh` | Manual moltbook skill install |
 
 All scripts support `--k8s` flag for vanilla Kubernetes (default is OpenShift/`oc`).

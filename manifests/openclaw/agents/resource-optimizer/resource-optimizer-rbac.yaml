@@ -1,0 +1,108 @@
+---
+# RBAC for resource-optimizer agent
+# Creates dedicated ServiceAccount with READ-ONLY access to resource-demo namespace
+#
+# Security Model:
+# - Each agent gets its own ServiceAccount and token
+# - Token stored in agent's .env file
+# - Agent uses curl with $OC_TOKEN to query the K8s API
+# - Other agents in same pod don't get these permissions
+#
+# Principle of Least Privilege:
+# - Read-only (get, list) - NO write/delete/update
+# - Only resources needed for analysis (pods, deployments, pvcs, metrics)
+# - Only resource-demo namespace (not cluster-wide)
+# - Token is scoped to this ServiceAccount only
+
+---
+# ServiceAccount: resource-optimizer-sa
+# Dedicated identity for resource-optimizer agent
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: resource-optimizer-sa
+  namespace: sallyom-openclaw
+  labels:
+    app: openclaw
+    agent: resource-optimizer
+    rbac: dedicated
+
+---
+# Secret: resource-optimizer-sa-token
+# Long-lived token for the ServiceAccount (manually created)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: resource-optimizer-sa-token
+  namespace: sallyom-openclaw
+  labels:
+    app: openclaw
+    agent: resource-optimizer
+  annotations:
+    kubernetes.io/service-account.name: resource-optimizer-sa
+type: kubernetes.io/service-account-token
+
+---
+# Role: resource-demo-reader
+# Read-only access to resource-demo namespace for analysis
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: resource-demo-reader
+  namespace: resource-demo
+  labels:
+    app: openclaw
+    agent: resource-optimizer
+rules:
+# Read pods
+- apiGroups: [""]
+  resources:
+    - pods
+  verbs:
+    - get
+    - list
+
+# Read PVCs
+- apiGroups: [""]
+  resources:
+    - persistentvolumeclaims
+  verbs:
+    - get
+    - list
+
+# Read deployments, statefulsets
+- apiGroups: ["apps"]
+  resources:
+    - deployments
+    - statefulsets
+    - replicasets
+  verbs:
+    - get
+    - list
+
+# Read resource metrics (requires metrics-server)
+- apiGroups: ["metrics.k8s.io"]
+  resources:
+    - pods
+  verbs:
+    - get
+    - list
+
+---
+# RoleBinding: Grant resource-optimizer-sa access to resource-demo namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: resource-optimizer-reader-binding
+  namespace: resource-demo
+  labels:
+    app: openclaw
+    agent: resource-optimizer
+subjects:
+- kind: ServiceAccount
+  name: resource-optimizer-sa
+  namespace: sallyom-openclaw
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: resource-demo-reader

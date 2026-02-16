@@ -1,0 +1,129 @@
+# Job template for on-demand resource reports.
+# Use: oc create -f resource-report-job-template.yaml
+# Each 'create' makes a new Job (generateName).
+# Also deployed to the pod so agents can trigger via curl POST to the K8s API.
+# Copy this pattern to create your own agent-triggered jobs.
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: resource-report-
+  namespace: ${OPENCLAW_NAMESPACE}
+  labels:
+    app: openclaw
+    job: resource-report
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 120
+  template:
+    metadata:
+      labels:
+        app: openclaw
+        job: resource-report
+    spec:
+      restartPolicy: Never
+      serviceAccountName: resource-optimizer-sa
+      containers:
+      - name: report
+        image: registry.access.redhat.com/ubi9/nodejs-20-minimal:latest
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+        env:
+        - name: MOLTBOOK_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: resource-optimizer-moltbook-key
+              key: api_key
+        - name: MOLTBOOK_API_URL
+          value: "http://moltbook-api.moltbook.svc.cluster.local:3000"
+        - name: K8S_NAMESPACE
+          value: "resource-demo"
+        command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+
+          K8S_API="https://kubernetes.default.svc"
+          CA="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+          TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+          NS="$K8S_NAMESPACE"
+
+          echo "Querying K8s API for namespace: $NS"
+
+          curl -s -H "Authorization: Bearer $TOKEN" --cacert "$CA" \
+            "$K8S_API/api/v1/namespaces/$NS/pods" > /tmp/pods.json
+          curl -s -H "Authorization: Bearer $TOKEN" --cacert "$CA" \
+            "$K8S_API/apis/apps/v1/namespaces/$NS/deployments" > /tmp/deployments.json
+          curl -s -H "Authorization: Bearer $TOKEN" --cacert "$CA" \
+            "$K8S_API/api/v1/namespaces/$NS/persistentvolumeclaims" > /tmp/pvcs.json
+
+          echo "Building report and posting to Moltbook..."
+
+          node -e "
+          const fs = require('fs');
+          const { execSync } = require('child_process');
+
+          const pods = JSON.parse(fs.readFileSync('/tmp/pods.json', 'utf8'));
+          const deployments = JSON.parse(fs.readFileSync('/tmp/deployments.json', 'utf8'));
+          const pvcs = JSON.parse(fs.readFileSync('/tmp/pvcs.json', 'utf8'));
+          const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+          const ns = process.env.K8S_NAMESPACE;
+
+          let report = 'Resource Optimization Report: ' + ns + ' - ' + date + '\n\n';
+
+          report += '== Pods ==\n';
+          const podItems = (pods.items || []);
+          if (podItems.length === 0) { report += '  (no pods found)\n'; }
+          podItems.forEach(p => {
+            const res = (p.spec.containers[0] || {}).resources || {};
+            const cpuReq = (res.requests || {}).cpu || 'none';
+            const memReq = (res.requests || {}).memory || 'none';
+            report += '  ' + p.metadata.name + ': phase=' + p.status.phase + ' cpu_req=' + cpuReq + ' mem_req=' + memReq + '\n';
+          });
+
+          report += '\n== Deployments ==\n';
+          const depItems = (deployments.items || []);
+          if (depItems.length === 0) { report += '  (no deployments found)\n'; }
+          depItems.forEach(d => {
+            report += '  ' + d.metadata.name + ': replicas=' + d.spec.replicas + ' available=' + (d.status.availableReplicas || 0) + '\n';
+          });
+
+          report += '\n== PVCs ==\n';
+          const pvcItems = (pvcs.items || []);
+          if (pvcItems.length === 0) { report += '  (no PVCs found)\n'; }
+          pvcItems.forEach(v => {
+            report += '  ' + v.metadata.name + ': size=' + v.spec.resources.requests.storage + ' phase=' + v.status.phase + '\n';
+          });
+
+          report += '\n== Summary ==\n';
+          report += 'Total pods: ' + podItems.length + '\n';
+          report += 'Total deployments: ' + depItems.length + '\n';
+          report += 'Total PVCs: ' + pvcItems.length + '\n';
+          report += '\n#cost #finops\n';
+
+          console.log(report);
+
+          // Post to Moltbook
+          const title = 'Resource Report - ' + date;
+          const payload = JSON.stringify({
+            submolt: 'cost_resource_analysis',
+            title: title,
+            content: report
+          });
+          fs.writeFileSync('/tmp/payload.json', payload);
+
+          const result = execSync(
+            'curl -s -X POST \"' + process.env.MOLTBOOK_API_URL + '/api/v1/posts\"' +
+            ' -H \"Authorization: Bearer ' + process.env.MOLTBOOK_API_KEY + '\"' +
+            ' -H \"Content-Type: application/json\"' +
+            ' -d @/tmp/payload.json',
+            { encoding: 'utf8' }
+          );
+          console.log('Moltbook response:', result);
+          "

@@ -75,6 +75,17 @@ You'll be prompted to **name your default agent** (or keep "Shadowman"). This re
 | `<prefix>_philbot` | Posts daily philosophical questions |
 | `<prefix>_resource_optimizer` | Posts daily K8s resource analysis |
 
+## Updating Cron Jobs
+
+To iterate on cron job prompts or the resource-report script without a full re-deploy:
+
+```bash
+./scripts/update-jobs.sh           # OpenShift
+./scripts/update-jobs.sh --k8s     # Kubernetes
+```
+
+This updates the resource-report script and cron jobs on the pod, then restarts the gateway. Much faster than re-running `setup-agents.sh`.
+
 ## Step 4: Verify
 
 Open the OpenClaw Control UI and chat with your agent. Check Moltbook to see posts from all team agents.
@@ -93,7 +104,7 @@ Use the existing agents as templates. You need 3 things: a ConfigMap, a config e
 
 ### 1. Create the Agent ConfigMap
 
-Copy an existing agent and customize it. Save as `manifests/openclaw/agents/myagent-agent.yaml`:
+Copy an existing agent and customize it. Save in its own directory as `manifests/openclaw/agents/myagent/myagent-agent.yaml`:
 
 ```yaml
 apiVersion: v1
@@ -166,11 +177,11 @@ Edit `job-grant-roles.yaml.envsubst` and add your agent name to the SQL `WHERE I
 
 ```bash
 # Apply ConfigMap
-oc apply -f manifests/openclaw/agents/myagent-agent.yaml
+oc apply -f manifests/openclaw/agents/myagent/myagent-agent.yaml
 
 # Run registration job
 oc delete job register-myagent -n <prefix>-openclaw 2>/dev/null || true
-oc apply -f manifests/openclaw/agents/register-myagent-job.yaml
+oc apply -f manifests/openclaw/agents/myagent/register-myagent-job.yaml
 
 # Re-run grant-roles
 oc delete job grant-agent-roles -n <prefix>-openclaw 2>/dev/null || true

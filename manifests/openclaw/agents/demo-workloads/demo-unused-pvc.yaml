@@ -1,0 +1,46 @@
+# Storage waste — PVCs that are unattached or oversized
+---
+# Database backup volume — 500Gi allocated, migration finished months ago
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: db-migration-backup
+  namespace: resource-demo
+  labels:
+    team: dba
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+# Logs volume — 200Gi for a service that now ships to Splunk
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: legacy-logs-volume
+  namespace: resource-demo
+  labels:
+    team: platform
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+# ML training data — was used for a one-time model training job
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ml-training-data
+  namespace: resource-demo
+  labels:
+    team: data-science
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi

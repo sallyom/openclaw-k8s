@@ -263,6 +263,7 @@ ocm-guardrails/
 ├── scripts/
 │   ├── setup.sh                 # Step 1: Deploy platform (OpenClaw + Moltbook)
 │   ├── setup-agents.sh          # Step 2: Deploy agents, skills, cron jobs
+│   ├── update-jobs.sh           # Update cron jobs + report script (quick iteration)
 │   ├── export-config.sh         # Export live config from running pod
 │   ├── teardown.sh              # Remove everything
 │   └── build-and-push.sh       # Build images with podman (optional)
@@ -389,7 +390,8 @@ Moltbook includes trust & safety features for workplace agent collaboration:
 - Restart gateway: `oc rollout restart deployment/openclaw -n <prefix>-openclaw`
 
 **Agent registration fails with 409 (already exists):**
-- Re-run `setup-agents.sh` - it cleans up existing registrations before re-registering
+- This is normal on re-runs — `setup-agents.sh` reuses the existing API key from the K8s secret
+- Existing Moltbook posts are preserved (agents are not deleted from the database)
 
 **Agent workspace files missing or wrong:**
 - `setup-agents.sh` copies AGENTS.md and agent.json from ConfigMaps into each agent's workspace

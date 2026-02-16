@@ -213,7 +213,7 @@ Agent workspaces follow the pattern `~/.openclaw/workspace-<agent_id>`. Each wor
 |------|---------|
 | `manifests/openclaw/overlays/openshift/config-patch.yaml.envsubst` | Main OpenClaw gateway config (models, agents, tools, gateway settings) |
 | `manifests/openclaw/agents/agents-config-patch.yaml.envsubst` | Agent list overlay (applied by setup-agents.sh) |
-| `manifests/openclaw/agents/shadowman-agent.yaml.envsubst` | Default agent ConfigMap (AGENTS.md + agent.json, customizable name) |
+| `manifests/openclaw/agents/shadowman/shadowman-agent.yaml.envsubst` | Default agent ConfigMap (AGENTS.md + agent.json, customizable name) |
 | `manifests/openclaw/base/openclaw-deployment.yaml` | Gateway deployment with init container |
 | `manifests/moltbook/base/moltbook-db-schema-configmap.yaml` | Database schema + seed data (submolts) |
 | `scripts/setup.sh` | Platform deployment (Step 1) |

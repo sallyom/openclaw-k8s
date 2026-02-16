@@ -1,0 +1,94 @@
+# Job to register Resource Optimizer with Moltbook
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: register-resource-optimizer
+  namespace: ${OPENCLAW_NAMESPACE}
+  labels:
+    app: openclaw
+    agent: resource-optimizer
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: openclaw
+        job: register-agent
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: register
+        image: quay.io/openshift/origin-cli:latest
+        resources:
+          requests:
+            memory: 128Mi
+            cpu: 100m
+          limits:
+            memory: 256Mi
+            cpu: 200m
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+
+          echo "Downloading jq..."
+          curl -sL https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64 -o /tmp/jq
+          chmod +x /tmp/jq
+
+          MOLTBOOK_API="http://moltbook-api.moltbook.svc.cluster.local:3000"
+          AGENT_NAME="${OPENCLAW_PREFIX}_resource_optimizer"
+          SECRET_NAME="resource-optimizer-moltbook-key"
+
+          echo "📝 Registering ${AGENT_NAME} with Moltbook..."
+
+          HTTP_CODE=$(curl -s -o /tmp/response.json -w '%{http_code}' -X POST \
+            "$MOLTBOOK_API/api/v1/agents/register" \
+            -H "Content-Type: application/json" \
+            -d @/agent/agent.json)
+
+          if [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "200" ]; then
+            # New registration — extract API key
+            API_KEY=$(cat /tmp/response.json | /tmp/jq -r '.agent.api_key')
+            echo "✅ Registered! API Key: ${API_KEY:0:20}..."
+
+          elif [ "$HTTP_CODE" = "409" ]; then
+            echo "Agent ${AGENT_NAME} already registered — checking existing secret..."
+            EXISTING_KEY=$(oc get secret "$SECRET_NAME" -n ${OPENCLAW_NAMESPACE} -o jsonpath='{.data.api_key}' 2>/dev/null | base64 -d) || true
+            if [ -n "$EXISTING_KEY" ]; then
+              echo "Existing API key found in secret ${SECRET_NAME} — reusing"
+              API_KEY="$EXISTING_KEY"
+            else
+              echo "ERROR: Agent exists but no API key secret found. Delete agent manually to re-register."
+              exit 1
+            fi
+
+          else
+            echo "ERROR: Registration failed (HTTP $HTTP_CODE)"
+            SAFE_RESPONSE=$(cat /tmp/response.json | sed 's/"api_key":"[^"]*"/"api_key":"[REDACTED]"/g')
+            echo "Response: $SAFE_RESPONSE"
+            exit 1
+          fi
+
+          if [ "$API_KEY" = "null" ] || [ -z "$API_KEY" ]; then
+            echo "ERROR: No API key in response"
+            exit 1
+          fi
+
+          # Create/update secret (same for both registration and rotation)
+          echo "Updating Kubernetes secret..."
+          oc create secret generic "$SECRET_NAME" \
+            -n ${OPENCLAW_NAMESPACE} \
+            --from-literal=api_key="$API_KEY" \
+            --dry-run=client -o yaml | oc apply -f -
+
+          echo "✅ Secret ${SECRET_NAME} updated!"
+          echo "${AGENT_NAME} setup complete!"
+        volumeMounts:
+        - name: agent-config
+          mountPath: /agent
+      volumes:
+      - name: agent-config
+        configMap:
+          name: resource-optimizer-agent
+      serviceAccountName: openclaw-agent-manager

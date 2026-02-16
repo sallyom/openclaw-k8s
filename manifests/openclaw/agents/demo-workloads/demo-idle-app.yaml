@@ -1,0 +1,92 @@
+# Idle / abandoned workloads — scaled to zero or left running with no purpose
+---
+# Staging environment someone forgot to tear down
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: staging-frontend
+  namespace: resource-demo
+  labels:
+    app: staging-frontend
+    team: frontend
+    environment: staging
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: staging-frontend
+  template:
+    metadata:
+      labels:
+        app: staging-frontend
+        team: frontend
+    spec:
+      containers:
+      - name: frontend
+        image: registry.access.redhat.com/ubi9/ubi-minimal
+        command: ["sleep", "infinity"]
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+---
+# Load test runner from last quarter — still deployed, 0 replicas
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadtest-runner
+  namespace: resource-demo
+  labels:
+    app: loadtest-runner
+    team: qa
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: loadtest-runner
+  template:
+    metadata:
+      labels:
+        app: loadtest-runner
+        team: qa
+    spec:
+      containers:
+      - name: k6
+        image: registry.access.redhat.com/ubi9/ubi-minimal
+        command: ["sleep", "infinity"]
+        resources:
+          requests:
+            cpu: "2"
+            memory: "4Gi"
+---
+# Debug pod someone left running with shell access
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: debug-shell
+  namespace: resource-demo
+  labels:
+    app: debug-shell
+    team: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: debug-shell
+  template:
+    metadata:
+      labels:
+        app: debug-shell
+        team: backend
+    spec:
+      containers:
+      - name: debug
+        image: registry.access.redhat.com/ubi9/ubi-minimal
+        command: ["sleep", "infinity"]
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "100m"
+            memory: "128Mi"

@@ -1,12 +1,12 @@
-# Job to register Resource Optimizer with Moltbook
+# Job to register PhilBot with Moltbook
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: register-resource-optimizer
+  name: register-philbot
   namespace: ${OPENCLAW_NAMESPACE}
   labels:
     app: openclaw
-    agent: resource-optimizer
+    agent: philbot
 spec:
   backoffLimit: 3
   template:
@@ -37,8 +37,8 @@ spec:
           chmod +x /tmp/jq
 
           MOLTBOOK_API="http://moltbook-api.moltbook.svc.cluster.local:3000"
-          AGENT_NAME="${OPENCLAW_PREFIX}_resource_optimizer"
-          SECRET_NAME="resource-optimizer-moltbook-key"
+          AGENT_NAME="${OPENCLAW_PREFIX}_philbot"
+          SECRET_NAME="philbot-moltbook-key"
 
           echo "📝 Registering ${AGENT_NAME} with Moltbook..."
 
@@ -53,9 +53,15 @@ spec:
             echo "✅ Registered! API Key: ${API_KEY:0:20}..."
 
           elif [ "$HTTP_CODE" = "409" ]; then
-            echo "ERROR: Agent ${AGENT_NAME} already registered."
-            echo "Re-run setup-agents.sh (it cleans up existing agents before registering)."
-            exit 1
+            echo "Agent ${AGENT_NAME} already registered — checking existing secret..."
+            EXISTING_KEY=$(oc get secret "$SECRET_NAME" -n ${OPENCLAW_NAMESPACE} -o jsonpath='{.data.api_key}' 2>/dev/null | base64 -d) || true
+            if [ -n "$EXISTING_KEY" ]; then
+              echo "Existing API key found in secret ${SECRET_NAME} — reusing"
+              API_KEY="$EXISTING_KEY"
+            else
+              echo "ERROR: Agent exists but no API key secret found. Delete agent manually to re-register."
+              exit 1
+            fi
 
           else
             echo "ERROR: Registration failed (HTTP $HTTP_CODE)"
@@ -84,5 +90,5 @@ spec:
       volumes:
       - name: agent-config
         configMap:
-          name: resource-optimizer-agent
+          name: philbot-agent
       serviceAccountName: openclaw-agent-manager

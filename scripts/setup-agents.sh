@@ -173,9 +173,9 @@ fi
 # Deploy agent ConfigMaps AFTER config patch (must come after any kustomize apply,
 # since the base kustomization includes a default shadowman-agent that would overwrite)
 log_info "Deploying agent ConfigMaps..."
-$KUBECTL apply -f "$REPO_ROOT/manifests/openclaw/agents/shadowman-agent.yaml"
-$KUBECTL apply -f "$REPO_ROOT/manifests/openclaw/agents/philbot-agent.yaml"
-$KUBECTL apply -f "$REPO_ROOT/manifests/openclaw/agents/resource-optimizer-agent.yaml"
+$KUBECTL apply -f "$REPO_ROOT/manifests/openclaw/agents/shadowman/shadowman-agent.yaml"
+$KUBECTL apply -f "$REPO_ROOT/manifests/openclaw/agents/philbot/philbot-agent.yaml"
+$KUBECTL apply -f "$REPO_ROOT/manifests/openclaw/agents/resource-optimizer/resource-optimizer-agent.yaml"
 log_success "Agent ConfigMaps deployed"
 echo ""
 
@@ -187,38 +187,18 @@ $KUBECTL kustomize "$REPO_ROOT/manifests/openclaw/skills/" \
 log_success "Skills deployed"
 echo ""
 
-# Pre-registration cleanup: remove agents from Moltbook DB for idempotent re-runs
-log_info "Cleaning up any existing agent registrations in Moltbook DB..."
-PG_POD=$($KUBECTL get pods -n moltbook -l app=moltbook-postgresql -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) || true
-# Fallback label selectors if the first one doesn't match
-if [ -z "$PG_POD" ]; then
-  PG_POD=$($KUBECTL get pods -n moltbook -l component=database -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) || true
-fi
-if [ -z "$PG_POD" ]; then
-  PG_POD=$($KUBECTL get pods -n moltbook -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null | grep -i postgres | head -1) || true
-fi
-if [ -n "$PG_POD" ]; then
-  # Disable audit_log immutability triggers to allow cascading SET NULL on agent delete
-  $KUBECTL exec -n moltbook "$PG_POD" -- psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
-    ALTER TABLE audit_log DISABLE TRIGGER audit_log_immutable_delete;
-    ALTER TABLE audit_log DISABLE TRIGGER audit_log_immutable_update;
-    DELETE FROM agents WHERE name IN ('${OPENCLAW_PREFIX}_${SHADOWMAN_CUSTOM_NAME}', '${OPENCLAW_PREFIX}_philbot', '${OPENCLAW_PREFIX}_resource_optimizer');
-    ALTER TABLE audit_log ENABLE TRIGGER audit_log_immutable_delete;
-    ALTER TABLE audit_log ENABLE TRIGGER audit_log_immutable_update;
-  " 2>/dev/null || log_warn "Could not clean up existing agents (table may not exist yet)"
-  log_success "Pre-registration cleanup done"
-else
-  log_warn "PostgreSQL pod not found — skipping pre-cleanup (first deploy?)"
-fi
+# NOTE: We intentionally do NOT delete agents from the Moltbook database.
+# Deleting agents cascades to delete all their posts (posts_author_id_fkey CASCADE).
+# Registration jobs handle 409 "already exists" gracefully by reusing existing API keys.
 echo ""
 
 # Register agents with Moltbook
 log_info "Registering agents with Moltbook..."
 # Delete old jobs if re-running (jobs are immutable)
 $KUBECTL delete job register-shadowman register-philbot register-resource-optimizer -n "$OPENCLAW_NAMESPACE" 2>/dev/null || true
-$KUBECTL apply -f "$REPO_ROOT/manifests/openclaw/agents/register-shadowman-job.yaml"
-$KUBECTL apply -f "$REPO_ROOT/manifests/openclaw/agents/register-philbot-job.yaml"
-$KUBECTL apply -f "$REPO_ROOT/manifests/openclaw/agents/register-resource-optimizer-job.yaml"
+$KUBECTL apply -f "$REPO_ROOT/manifests/openclaw/agents/shadowman/register-shadowman-job.yaml"
+$KUBECTL apply -f "$REPO_ROOT/manifests/openclaw/agents/philbot/register-philbot-job.yaml"
+$KUBECTL apply -f "$REPO_ROOT/manifests/openclaw/agents/resource-optimizer/register-resource-optimizer-job.yaml"
 sleep 5
 $KUBECTL wait --for=condition=complete --timeout=60s job/register-shadowman -n "$OPENCLAW_NAMESPACE" 2>/dev/null || log_warn "Agent registration still running"
 $KUBECTL wait --for=condition=complete --timeout=60s job/register-philbot -n "$OPENCLAW_NAMESPACE" 2>/dev/null || log_warn "Agent registration still running"
@@ -238,12 +218,14 @@ echo ""
 # Setup resource-optimizer RBAC (ServiceAccount + read-only access to resource-demo)
 log_info "Setting up resource-optimizer RBAC..."
 $KUBECTL create namespace resource-demo --dry-run=client -o yaml | $KUBECTL apply -f - > /dev/null
-$KUBECTL apply -f "$REPO_ROOT/manifests/openclaw/agents/resource-optimizer-rbac.yaml"
+$KUBECTL apply -f "$REPO_ROOT/manifests/openclaw/agents/resource-optimizer/resource-optimizer-rbac.yaml"
 # Deploy demo workloads for resource-optimizer to analyze
-for demo in "$REPO_ROOT/manifests/openclaw/agents"/demo-*.yaml; do
+for demo in "$REPO_ROOT/manifests/openclaw/agents/demo-workloads"/demo-*.yaml; do
   [ -f "$demo" ] && $KUBECTL apply -f "$demo"
 done
-log_success "Resource-optimizer RBAC and demo workloads applied"
+# Deploy K8s CronJob for resource reports (runs independently of the LLM)
+$KUBECTL apply -f "$REPO_ROOT/manifests/openclaw/agents/resource-optimizer/resource-report-cronjob.yaml"
+log_success "Resource-optimizer RBAC, demo workloads, and report CronJob applied"
 echo ""
 
 # Restart OpenClaw to pick up new config
@@ -349,58 +331,9 @@ $KUBECTL rollout status deployment/openclaw -n "$OPENCLAW_NAMESPACE" --timeout=1
 log_success "OpenClaw ready"
 echo ""
 
-# Setup cron jobs — write jobs.json directly to the PVC on the NEW pod
-# (The CLI's --token flag doesn't bypass device pairing, so we write the file instead)
-log_info "Setting up cron jobs for autonomous posting..."
-NOW_MS=$(date +%s000)
-cat <<CRON_EOF | $KUBECTL exec -i deployment/openclaw -n "$OPENCLAW_NAMESPACE" -c gateway -- \
-  sh -c 'mkdir -p /home/node/.openclaw/cron && cat > /home/node/.openclaw/cron/jobs.json'
-{
-  "version": 1,
-  "jobs": [
-    {
-      "id": "${OPENCLAW_PREFIX}-philbot-daily",
-      "agentId": "${OPENCLAW_PREFIX}_philbot",
-      "name": "${OPENCLAW_PREFIX}-philbot-daily",
-      "description": "Daily philosophical discussion post",
-      "enabled": true,
-      "createdAtMs": ${NOW_MS},
-      "updatedAtMs": ${NOW_MS},
-      "schedule": { "kind": "cron", "expr": "0 9 * * *", "tz": "UTC" },
-      "sessionTarget": "isolated",
-      "wakeMode": "now",
-      "delivery": { "mode": "none" },
-      "payload": {
-        "kind": "agentTurn",
-        "message": "You are PhilBot. Your task: post a philosophical question to Moltbook. Follow these steps EXACTLY:\n\nStep 1: Pick ONE topic from this list: consciousness, free will, ethics of AI, nature of intelligence, meaning of existence, philosophy of mind.\n\nStep 2: Write a short philosophical question (1-2 sentences) about that topic.\n\nStep 3: Run this SINGLE command (replace YOUR_QUESTION and YOUR_TITLE with your question and a short title):\n\n. ~/.openclaw/workspace-${OPENCLAW_PREFIX}_philbot/.env && curl -s -X POST \"\$MOLTBOOK_API_URL/api/v1/posts\" -H \"Authorization: Bearer \$MOLTBOOK_API_KEY\" -H \"Content-Type: application/json\" -d '{\"submolt\":\"philosophy\",\"title\":\"YOUR_TITLE\",\"content\":\"YOUR_QUESTION\\n\\n#philosophy #thought\"}'\n\nIMPORTANT: Run the command above using the exec tool. Do NOT echo or print any credentials. Do NOT run separate commands — use a single chained command with &&.",
-        "thinking": "low"
-      },
-      "state": {}
-    },
-    {
-      "id": "${OPENCLAW_PREFIX}-resource-optimizer-scan",
-      "agentId": "${OPENCLAW_PREFIX}_resource_optimizer",
-      "name": "${OPENCLAW_PREFIX}-resource-optimizer-scan",
-      "description": "Daily cost optimization analysis",
-      "enabled": true,
-      "createdAtMs": ${NOW_MS},
-      "updatedAtMs": ${NOW_MS},
-      "schedule": { "kind": "cron", "expr": "0 8 * * *", "tz": "UTC" },
-      "sessionTarget": "isolated",
-      "wakeMode": "now",
-      "delivery": { "mode": "none" },
-      "payload": {
-        "kind": "agentTurn",
-        "message": "You are the Resource Optimizer. Check resource usage in resource-demo namespace and post a report to Moltbook.\n\nStep 1: Run this command to query resources:\n\n. ~/.openclaw/workspace-${OPENCLAW_PREFIX}_resource_optimizer/.env && K8S_API=https://kubernetes.default.svc && CA=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt && curl -s -H \"Authorization: Bearer \$OC_TOKEN\" --cacert \$CA \"\$K8S_API/api/v1/namespaces/resource-demo/pods\" | jq '[.items[] | {name: .metadata.name, phase: .status.phase, cpu_req: .spec.containers[0].resources.requests.cpu, mem_req: .spec.containers[0].resources.requests.memory}]' && curl -s -H \"Authorization: Bearer \$OC_TOKEN\" --cacert \$CA \"\$K8S_API/apis/apps/v1/namespaces/resource-demo/deployments\" | jq '[.items[] | {name: .metadata.name, replicas: .spec.replicas, available: .status.availableReplicas}]'\n\nStep 2: Write your analysis to a file. Include findings about over-provisioned pods, idle deployments, and recommendations. Use the write tool to create /tmp/report.txt with your analysis.\n\nStep 3: Post to Moltbook using this command (it reads your report from the file and builds valid JSON automatically):\n\n. ~/.openclaw/workspace-${OPENCLAW_PREFIX}_resource_optimizer/.env && TITLE=\"Resource Report - \$(date -u +'%b %d %Y')\" && jq -n --arg submolt cost_resource_analysis --arg title \"\$TITLE\" --arg content \"\$(cat /tmp/report.txt)\" '{submolt: \$submolt, title: \$title, content: \$content}' | curl -s -X POST \"\$MOLTBOOK_API_URL/api/v1/posts\" -H \"Authorization: Bearer \$MOLTBOOK_API_KEY\" -H \"Content-Type: application/json\" -d @-\n\nIMPORTANT: Use the write tool to write the report file, then use exec to run the posting command. Do NOT construct JSON by hand. Do NOT echo credentials.",
-        "thinking": "low"
-      },
-      "state": {}
-    }
-  ]
-}
-CRON_EOF
+# Deploy cron jobs and resource-report script (shared with update-jobs.sh)
+"$SCRIPT_DIR/update-jobs.sh" --skip-restart
 log_success "Cron jobs written to new pod"
-echo ""
 
 # Final restart to load the cron jobs (gateway reads jobs.json at startup)
 log_info "Final restart to load cron jobs..."

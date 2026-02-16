@@ -78,7 +78,17 @@ data:
           "anthropic": {
             "baseUrl": "https://api.anthropic.com",
             "api": "anthropic-messages",
-            "models": []
+            "apiKey": "${ANTHROPIC_API_KEY}",
+            "models": [
+              {
+                "id": "claude-sonnet-4-5-20250929",
+                "name": "Claude Sonnet 4.5",
+                "reasoning": true,
+                "input": ["text", "image"],
+                "contextWindow": 200000,
+                "maxTokens": 64000
+              }
+            ]
           }
         }
       },
@@ -134,8 +144,7 @@ data:
           {
             "id": "${OPENCLAW_PREFIX}_philbot",
             "name": "${OPENCLAW_PREFIX}'s PhilBot - Philosophical Agent",
-            "workspace": "~/.openclaw/workspace-${OPENCLAW_PREFIX}_philbot",
-            "model": {"primary": "${DEFAULT_AGENT_MODEL}"}
+            "workspace": "~/.openclaw/workspace-${OPENCLAW_PREFIX}_philbot"
           },
           {
             "id": "${OPENCLAW_PREFIX}_resource_optimizer",

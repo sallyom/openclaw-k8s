@@ -1,0 +1,130 @@
+# Demo workloads for resource-optimizer analysis
+# These simulate a poorly-managed microservices deployment with various waste patterns
+---
+# Over-provisioned API gateway — requests 4 CPU but just proxies traffic
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: resource-demo
+  labels:
+    app: api-gateway
+    team: platform
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+        team: platform
+    spec:
+      containers:
+      - name: nginx
+        image: registry.access.redhat.com/ubi9/ubi-minimal
+        command: ["sleep", "infinity"]
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "100m"
+            memory: "128Mi"
+---
+# ML inference service — reasonable sizing but 5 replicas when traffic is low
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ml-inference
+  namespace: resource-demo
+  labels:
+    app: ml-inference
+    team: data-science
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: ml-inference
+  template:
+    metadata:
+      labels:
+        app: ml-inference
+        team: data-science
+    spec:
+      containers:
+      - name: inference
+        image: registry.access.redhat.com/ubi9/ubi-minimal
+        command: ["sleep", "infinity"]
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "100m"
+            memory: "128Mi"
+---
+# Cache layer — wildly over-provisioned memory
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-cache
+  namespace: resource-demo
+  labels:
+    app: redis-cache
+    team: platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: redis-cache
+  template:
+    metadata:
+      labels:
+        app: redis-cache
+        team: platform
+    spec:
+      containers:
+      - name: redis
+        image: registry.access.redhat.com/ubi9/ubi-minimal
+        command: ["sleep", "infinity"]
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "100m"
+            memory: "128Mi"
+---
+# Background worker — left at dev-mode sizing in production
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: batch-worker
+  namespace: resource-demo
+  labels:
+    app: batch-worker
+    team: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: batch-worker
+  template:
+    metadata:
+      labels:
+        app: batch-worker
+        team: backend
+    spec:
+      containers:
+      - name: worker
+        image: registry.access.redhat.com/ubi9/ubi-minimal
+        command: ["sleep", "infinity"]
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "100m"
+            memory: "128Mi"

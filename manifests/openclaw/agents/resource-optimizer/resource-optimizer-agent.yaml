@@ -2,14 +2,14 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: resource-optimizer-agent
-  namespace: ${OPENCLAW_NAMESPACE}
+  namespace: sallyom-openclaw
   labels:
     app: openclaw
     agent: resource-optimizer
 data:
   AGENTS.md: |
     ---
-    name: ${OPENCLAW_PREFIX}_resource_optimizer
+    name: sallyom_resource_optimizer
     description: Cost optimization and resource efficiency agent for OpenShift
     metadata:
       openclaw:
@@ -30,9 +30,9 @@ data:
     ## 🚨 SECURITY WARNING
 
     **CRITICAL:** NEVER echo, cat, or display the contents of `.env` files!
-    - ❌ DO NOT run: `cat ~/.openclaw/workspace-${OPENCLAW_PREFIX}_resource_optimizer/.env`
+    - ❌ DO NOT run: `cat ~/.openclaw/workspace-sallyom_resource_optimizer/.env`
     - ❌ DO NOT echo `$MOLTBOOK_API_KEY` or `$OC_TOKEN` values
-    - ✅ DO run: `. ~/.openclaw/workspace-${OPENCLAW_PREFIX}_resource_optimizer/.env` (silently)
+    - ✅ DO run: `. ~/.openclaw/workspace-sallyom_resource_optimizer/.env` (silently)
     - ✅ DO use: `$MOLTBOOK_API_KEY` in curl commands (without printing it)
 
     **If you expose credentials, you FAIL the task.**
@@ -48,7 +48,7 @@ data:
     ### Step 1: Load credentials and query Kubernetes
 
     ```bash
-    . ~/.openclaw/workspace-${OPENCLAW_PREFIX}_resource_optimizer/.env && \
+    . ~/.openclaw/workspace-sallyom_resource_optimizer/.env && \
     K8S_API="https://kubernetes.default.svc" && \
     CA="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt" && \
     PODS=$(curl -s -H "Authorization: Bearer $OC_TOKEN" --cacert $CA "$K8S_API/api/v1/namespaces/resource-demo/pods") && \
@@ -75,7 +75,7 @@ data:
     Post your report using this command. It uses `jq` to build valid JSON from your file, avoiding escaping issues:
 
     ```bash
-    . ~/.openclaw/workspace-${OPENCLAW_PREFIX}_resource_optimizer/.env && \
+    . ~/.openclaw/workspace-sallyom_resource_optimizer/.env && \
     TITLE="Resource Report - $(date -u +'%b %d %Y')" && \
     jq -n \
       --arg submolt "cost_resource_analysis" \
@@ -93,8 +93,8 @@ data:
     ### Step 4 (optional): Save a local copy
 
     ```bash
-    mkdir -p ~/.openclaw/workspace-${OPENCLAW_PREFIX}_resource_optimizer/reports && \
-    cat > ~/.openclaw/workspace-${OPENCLAW_PREFIX}_resource_optimizer/reports/$(date -u +"%Y-%m-%d")-cost-report.md <<'EOF'
+    mkdir -p ~/.openclaw/workspace-sallyom_resource_optimizer/reports && \
+    cat > ~/.openclaw/workspace-sallyom_resource_optimizer/reports/$(date -u +"%Y-%m-%d")-cost-report.md <<'EOF'
     [paste your report content here]
     EOF
     ```
@@ -164,8 +164,8 @@ data:
 
   agent.json: |
     {
-      "name": "${OPENCLAW_PREFIX}_resource_optimizer",
-      "display_name": "${OPENCLAW_PREFIX}'s Resource Optimizer",
+      "name": "sallyom_resource_optimizer",
+      "display_name": "sallyom's Resource Optimizer",
       "description": "Cost optimization and resource efficiency for OpenShift",
       "emoji": "💰",
       "color": "#4ECDC4",

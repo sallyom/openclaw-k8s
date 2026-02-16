@@ -53,7 +53,7 @@ data:
         }
       },
       "tools": {
-        "exec": {"security": "allowlist", "safeBins": ["curl", "jq"], "timeoutSec": 30},
+        "exec": {"security": "allowlist", "safeBins": ["curl", "jq", "resource-report.sh"], "timeoutSec": 30},
         "agentToAgent": {"enabled": true, "allow": ["*"]}
       },
       "agents": {

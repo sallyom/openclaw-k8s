@@ -1,12 +1,12 @@
-# Job to register PhilBot with Moltbook
+# Job to register Shadowman with Moltbook
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: register-philbot
-  namespace: ${OPENCLAW_NAMESPACE}
+  name: register-shadowman
+  namespace: sallyom-openclaw
   labels:
     app: openclaw
-    agent: philbot
+    agent: shadowman
 spec:
   backoffLimit: 3
   template:
@@ -37,10 +37,10 @@ spec:
           chmod +x /tmp/jq
 
           MOLTBOOK_API="http://moltbook-api.moltbook.svc.cluster.local:3000"
-          AGENT_NAME="${OPENCLAW_PREFIX}_philbot"
-          SECRET_NAME="philbot-moltbook-key"
+          AGENT_NAME="sallyom_lynx"
+          SECRET_NAME="sallyom-lynx-moltbook-key"
 
-          echo "📝 Registering ${AGENT_NAME} with Moltbook..."
+          echo "Registering ${AGENT_NAME} with Moltbook..."
 
           HTTP_CODE=$(curl -s -o /tmp/response.json -w '%{http_code}' -X POST \
             "$MOLTBOOK_API/api/v1/agents/register" \
@@ -48,14 +48,19 @@ spec:
             -d @/agent/agent.json)
 
           if [ "$HTTP_CODE" = "201" ] || [ "$HTTP_CODE" = "200" ]; then
-            # New registration — extract API key
             API_KEY=$(cat /tmp/response.json | /tmp/jq -r '.agent.api_key')
-            echo "✅ Registered! API Key: ${API_KEY:0:20}..."
+            echo "Registered! API Key: ${API_KEY:0:20}..."
 
           elif [ "$HTTP_CODE" = "409" ]; then
-            echo "ERROR: Agent ${AGENT_NAME} already registered."
-            echo "Re-run setup-agents.sh (it cleans up existing agents before registering)."
-            exit 1
+            echo "Agent ${AGENT_NAME} already registered — checking existing secret..."
+            EXISTING_KEY=$(oc get secret "$SECRET_NAME" -n sallyom-openclaw -o jsonpath='{.data.api_key}' 2>/dev/null | base64 -d) || true
+            if [ -n "$EXISTING_KEY" ]; then
+              echo "Existing API key found in secret ${SECRET_NAME} — reusing"
+              API_KEY="$EXISTING_KEY"
+            else
+              echo "ERROR: Agent exists but no API key secret found. Delete agent manually to re-register."
+              exit 1
+            fi
 
           else
             echo "ERROR: Registration failed (HTTP $HTTP_CODE)"
@@ -69,14 +74,14 @@ spec:
             exit 1
           fi
 
-          # Create/update secret (same for both registration and rotation)
+          # Create/update secret
           echo "Updating Kubernetes secret..."
           oc create secret generic "$SECRET_NAME" \
-            -n ${OPENCLAW_NAMESPACE} \
+            -n sallyom-openclaw \
             --from-literal=api_key="$API_KEY" \
             --dry-run=client -o yaml | oc apply -f -
 
-          echo "✅ Secret ${SECRET_NAME} updated!"
+          echo "Secret ${SECRET_NAME} updated!"
           echo "${AGENT_NAME} setup complete!"
         volumeMounts:
         - name: agent-config
@@ -84,5 +89,5 @@ spec:
       volumes:
       - name: agent-config
         configMap:
-          name: philbot-agent
+          name: shadowman-agent
       serviceAccountName: openclaw-agent-manager
