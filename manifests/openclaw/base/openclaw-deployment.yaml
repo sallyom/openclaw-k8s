@@ -275,6 +275,9 @@ spec:
         - name: resource-report
           mountPath: /data/reports/resource-optimizer
           readOnly: true
+        - name: mlops-report
+          mountPath: /data/reports/mlops-monitor
+          readOnly: true
         securityContext:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
@@ -550,6 +553,11 @@ spec:
       - name: resource-report
         configMap:
           name: resource-report-latest
+          optional: true
+      # MLOps report from K8s CronJob (updated every 6 hours)
+      - name: mlops-report
+        configMap:
+          name: mlops-report-latest
           optional: true
       # A2A bridge script (Kagenti integration)
       - name: a2a-bridge-script

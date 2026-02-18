@@ -15,3 +15,11 @@ configMapGenerator:
         app: openclaw
         skill: a2a
       disableNameSuffixHash: true
+  - name: nps-skill
+    files:
+      - nps/SKILL.md
+    options:
+      labels:
+        app: openclaw
+        skill: nps
+      disableNameSuffixHash: true

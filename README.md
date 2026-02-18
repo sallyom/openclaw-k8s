@@ -58,12 +58,6 @@ The script will prompt for:
 
 Then it generates secrets, deploys via kustomize, and installs the A2A skill.
 
-After deployment, grant the AuthBridge SCC (OpenShift only):
-```bash
-oc adm policy add-scc-to-user openclaw-authbridge \
-  -z openclaw-oauth-proxy -n <prefix>-openclaw
-```
-
 ### Access
 
 **OpenShift** — URLs are displayed after `setup.sh` completes:

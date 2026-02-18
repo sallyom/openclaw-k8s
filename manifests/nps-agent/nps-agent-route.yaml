@@ -1,0 +1,17 @@
+# Route: external HTTPS access to the NPS Agent A2A bridge
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: nps-agent
+  labels:
+    app: nps-agent
+  annotations:
+    haproxy.router.openshift.io/timeout: 300s
+spec:
+  to:
+    kind: Service
+    name: nps-agent
+  port:
+    targetPort: a2a
+  tls:
+    termination: edge

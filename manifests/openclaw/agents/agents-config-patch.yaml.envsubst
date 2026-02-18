@@ -159,6 +159,12 @@ data:
             "name": "${OPENCLAW_PREFIX}'s Resource Optimizer - Cost Analysis",
             "workspace": "~/.openclaw/workspace-${OPENCLAW_PREFIX}_resource_optimizer",
             "subagents": {"allowAgents": ["*"]}
+          },
+          {
+            "id": "${OPENCLAW_PREFIX}_mlops_monitor",
+            "name": "${OPENCLAW_PREFIX}'s MLOps Monitor",
+            "workspace": "~/.openclaw/workspace-${OPENCLAW_PREFIX}_mlops_monitor",
+            "subagents": {"allowAgents": ["*"]}
           }
         ]
       },

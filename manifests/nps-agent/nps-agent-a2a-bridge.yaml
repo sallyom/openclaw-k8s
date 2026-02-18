@@ -1,0 +1,205 @@
+# ConfigMap: A2A bridge for NPS Agent
+# Translates Google A2A JSON-RPC protocol to the NPS Agent's /invocations API
+# Based on manifests/openclaw/base/a2a-bridge-configmap.yaml but adapted for
+# MLflow ResponsesAgent format instead of OpenAI chat completions
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nps-agent-a2a-bridge
+  labels:
+    app: nps-agent
+    app.kubernetes.io/component: a2a-bridge
+data:
+  a2a-bridge.js: |
+    'use strict';
+    const http = require('http');
+    const crypto = require('crypto');
+
+    const PORT = 8080;
+    const BACKEND_HOST = '127.0.0.1';
+    const BACKEND_PORT = parseInt(process.env.BACKEND_PORT || '8090');
+    const AGENT_NAME = process.env.AGENT_NAME || 'NPS Agent';
+    const AGENT_DESCRIPTION = process.env.AGENT_DESCRIPTION || 'National Park Service Information Assistant';
+
+    const AGENT_CARD = {
+      name: AGENT_NAME,
+      description: AGENT_DESCRIPTION,
+      version: '1.0.0',
+      url: `http://nps-agent.${process.env.POD_NAMESPACE || 'nps-agent'}.svc.cluster.local:${PORT}`,
+      capabilities: { streaming: false },
+      skills: [
+        {
+          id: 'nps',
+          name: 'Park Information',
+          description: 'Ask about U.S. national parks — locations, alerts, campgrounds, events, visitor centers',
+          examples: [
+            'What national parks are in California?',
+            'Are there any alerts for Yellowstone?',
+            'What campgrounds are at the Grand Canyon?'
+          ]
+        }
+      ]
+    };
+
+    function readBody(req) {
+      return new Promise((resolve, reject) => {
+        const chunks = [];
+        req.on('data', chunk => chunks.push(chunk));
+        req.on('end', () => resolve(Buffer.concat(chunks).toString()));
+        req.on('error', reject);
+      });
+    }
+
+    function backendRequest(path, method, body, headers) {
+      return new Promise((resolve, reject) => {
+        const req = http.request({
+          hostname: BACKEND_HOST,
+          port: BACKEND_PORT,
+          path: path,
+          method: method,
+          headers: headers,
+          timeout: 300000
+        }, (res) => {
+          const chunks = [];
+          res.on('data', chunk => chunks.push(chunk));
+          res.on('end', () => {
+            const data = Buffer.concat(chunks).toString();
+            try {
+              resolve({ status: res.statusCode, body: JSON.parse(data) });
+            } catch {
+              resolve({ status: res.statusCode, body: data });
+            }
+          });
+        });
+        req.on('error', reject);
+        req.on('timeout', () => { req.destroy(); reject(new Error('Backend timeout')); });
+        if (body) req.write(body);
+        req.end();
+      });
+    }
+
+    async function handleA2AMessage(a2aRequest) {
+      // Extract message text from A2A parts
+      const parts = a2aRequest.params?.message?.parts || [];
+      const text = parts
+        .filter(p => p.kind === 'text' || (typeof p.text === 'string'))
+        .map(p => p.text)
+        .join('\n');
+
+      if (!text) {
+        return {
+          jsonrpc: '2.0',
+          id: a2aRequest.id,
+          error: { code: -32602, message: 'No text content in message parts' }
+        };
+      }
+
+      // Translate to NPS Agent /invocations format (MLflow ResponsesAgent)
+      const payload = JSON.stringify({ input: text });
+
+      const headers = {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload)
+      };
+
+      const result = await backendRequest('/invocations', 'POST', payload, headers);
+
+      if (result.status !== 200) {
+        console.error('NPS Agent returned', result.status, result.body);
+        return {
+          jsonrpc: '2.0',
+          id: a2aRequest.id,
+          error: { code: -32603, message: `NPS Agent error: ${result.status}` }
+        };
+      }
+
+      // Extract response from MLflow ResponsesAgent format
+      // Format: { output: [{ role: "assistant", content: [{ type: "text", text: "..." }] }] }
+      let content = 'No response from NPS Agent';
+      const output = result.body?.output;
+      if (Array.isArray(output) && output.length > 0) {
+        const lastMsg = output[output.length - 1];
+        if (typeof lastMsg === 'string') {
+          content = lastMsg;
+        } else if (Array.isArray(lastMsg?.content)) {
+          const textPart = lastMsg.content.find(c => c.type === 'text' || c.text);
+          if (textPart) content = textPart.text || textPart;
+        } else if (typeof lastMsg?.content === 'string') {
+          content = lastMsg.content;
+        }
+      } else if (typeof output === 'string') {
+        content = output;
+      }
+
+      return {
+        jsonrpc: '2.0',
+        id: a2aRequest.id,
+        result: {
+          id: crypto.randomUUID(),
+          status: {
+            state: 'COMPLETED',
+            message: {
+              role: 'agent',
+              parts: [{ kind: 'text', text: content }],
+              messageId: crypto.randomUUID()
+            }
+          }
+        }
+      };
+    }
+
+    const server = http.createServer(async (req, res) => {
+      const url = new URL(req.url, `http://${req.headers.host}`);
+
+      // Agent card discovery
+      if (req.method === 'GET' && (url.pathname === '/.well-known/agent-card.json' || url.pathname === '/.well-known/agent.json')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(AGENT_CARD));
+        return;
+      }
+
+      // Health check — also checks backend
+      if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/health')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok', bridge: 'nps-agent-a2a' }));
+        return;
+      }
+
+      // A2A JSON-RPC endpoint
+      if (req.method === 'POST' && (url.pathname === '/' || url.pathname === '/a2a')) {
+        try {
+          const body = await readBody(req);
+          const a2aRequest = JSON.parse(body);
+
+          if (a2aRequest.method === 'message/send' || a2aRequest.method === 'message/stream') {
+            const response = await handleA2AMessage(a2aRequest);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(response));
+          } else {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              jsonrpc: '2.0',
+              id: a2aRequest.id,
+              error: { code: -32601, message: `Method not supported: ${a2aRequest.method}` }
+            }));
+          }
+        } catch (err) {
+          console.error('A2A bridge error:', err);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            jsonrpc: '2.0',
+            error: { code: -32603, message: err.message }
+          }));
+        }
+        return;
+      }
+
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Not found' }));
+    });
+
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`NPS Agent A2A bridge listening on 0.0.0.0:${PORT}`);
+      console.log(`Backend: ${BACKEND_HOST}:${BACKEND_PORT}/invocations`);
+      console.log(`Agent card: http://0.0.0.0:${PORT}/.well-known/agent.json`);
+    });

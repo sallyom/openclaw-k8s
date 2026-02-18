@@ -1,0 +1,53 @@
+# RBAC for mlops-monitor CronJob
+# ServiceAccount + Secret + Role for updating the mlops-report-latest ConfigMap
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mlops-monitor-sa
+  namespace: ${OPENCLAW_NAMESPACE}
+  labels:
+    app: openclaw
+    agent: mlops-monitor
+
+---
+# Long-lived token for the CronJob (auto-populated by K8s)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mlops-monitor-sa-token
+  namespace: ${OPENCLAW_NAMESPACE}
+  annotations:
+    kubernetes.io/service-account.name: mlops-monitor-sa
+  labels:
+    app: openclaw
+    agent: mlops-monitor
+type: kubernetes.io/service-account-token
+
+---
+# Role: can only update the mlops-report-latest ConfigMap
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mlops-report-writer
+  namespace: ${OPENCLAW_NAMESPACE}
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  resourceNames: ["mlops-report-latest"]
+  verbs: ["get", "update", "patch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mlops-report-writer-binding
+  namespace: ${OPENCLAW_NAMESPACE}
+subjects:
+- kind: ServiceAccount
+  name: mlops-monitor-sa
+  namespace: ${OPENCLAW_NAMESPACE}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: mlops-report-writer

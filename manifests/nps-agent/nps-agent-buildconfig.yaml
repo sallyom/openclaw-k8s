@@ -1,0 +1,37 @@
+# BuildConfig + ImageStream for NPS Agent
+# Builds from the upstream repo: https://github.com/Nehanth/nps_agent
+# Uses s2i with Python 3.12 UBI9 base image
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: nps-agent
+  labels:
+    app: nps-agent
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: nps-agent
+  labels:
+    app: nps-agent
+spec:
+  source:
+    type: Git
+    git:
+      uri: https://github.com/Nehanth/nps_agent.git
+      ref: main
+    contextDir: 2_deploy
+  strategy:
+    type: Source
+    sourceStrategy:
+      from:
+        kind: ImageStreamTag
+        namespace: openshift
+        name: python:3.12-ubi9
+  output:
+    to:
+      kind: ImageStreamTag
+      name: nps-agent:latest
+  triggers:
+    - type: ConfigChange

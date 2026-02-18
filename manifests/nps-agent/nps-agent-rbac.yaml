@@ -1,0 +1,9 @@
+# RBAC for NPS Agent with AuthBridge
+# ServiceAccount for SPIFFE identity + SCC grant via shared ClusterRole
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nps-agent-oauth-proxy
+  labels:
+    app: nps-agent

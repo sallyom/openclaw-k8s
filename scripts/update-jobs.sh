@@ -90,6 +90,18 @@ cat <<CRON_EOF | $KUBECTL exec -i deployment/openclaw -n "$OPENCLAW_NAMESPACE" -
         "kind": "agentTurn",
         "message": "Read the latest resource report by running: cat /data/reports/resource-optimizer/report.txt — then analyze it for notable findings: over-provisioned pods (high requests but likely low usage), idle deployments (0 replicas), unattached PVCs, or any degraded deployments. If you find issues worth flagging, send a brief 2-3 sentence summary to ${OPENCLAW_PREFIX}_${SHADOWMAN_CUSTOM_NAME} using sessions_send. Focus on actionable insights. If everything looks healthy, no message needed."
       }
+    },
+    {
+      "id": "mlops-monitor-analysis",
+      "agentId": "${OPENCLAW_PREFIX}_mlops_monitor",
+      "schedule": {"kind": "cron", "expr": "0 10,16 * * *", "tz": "UTC"},
+      "sessionTarget": "isolated",
+      "delivery": { "mode": "none" },
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "Read the latest MLOps report at /data/reports/mlops-monitor/report.txt. Analyze for: high error rates (above 5%), latency spikes (above 30s average), low evaluation scores, or unusual patterns. If you find anything notable, send a brief summary to ${OPENCLAW_PREFIX}_${SHADOWMAN_CUSTOM_NAME} using sessions_send. Include specific numbers. If metrics look healthy, no message needed."
+      }
     }
   ]
 }

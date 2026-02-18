@@ -1,0 +1,220 @@
+# CronJob: Fetch MLflow traces/evals for the NPS Agent and write report to ConfigMap
+# Runs every 6 hours, independently of the LLM
+# The mlops-monitor agent reads the resulting ConfigMap report for analysis
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mlops-report
+  namespace: ${OPENCLAW_NAMESPACE}
+  labels:
+    app: openclaw
+    agent: mlops-monitor
+spec:
+  schedule: "0 */6 * * *"
+  concurrencyPolicy: Replace
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 120
+      template:
+        metadata:
+          labels:
+            app: openclaw
+            agent: mlops-monitor
+            job: mlops-report
+        spec:
+          serviceAccountName: mlops-monitor-sa
+          restartPolicy: Never
+          containers:
+          - name: report
+            image: registry.access.redhat.com/ubi9/nodejs-20-minimal:latest
+            resources:
+              requests:
+                cpu: 50m
+                memory: 64Mi
+              limits:
+                cpu: 200m
+                memory: 128Mi
+            env:
+            - name: MLFLOW_TRACKING_URI
+              valueFrom:
+                secretKeyRef:
+                  name: mlops-monitor-secrets
+                  key: MLFLOW_TRACKING_URI
+            command:
+            - /bin/sh
+            - -c
+            - |
+              node -e '
+              const https = require("https");
+              const http = require("http");
+              const fs = require("fs");
+
+              const MLFLOW_URI = process.env.MLFLOW_TRACKING_URI || "";
+              const EXPERIMENT_NAME = "nps-agent";
+              const MAX_TRACES = 50;
+
+              // K8s API access for ConfigMap update
+              const K8S_TOKEN = fs.readFileSync("/var/run/secrets/kubernetes.io/serviceaccount/token", "utf8");
+              const K8S_NS = fs.readFileSync("/var/run/secrets/kubernetes.io/serviceaccount/namespace", "utf8").trim();
+              const K8S_CA = fs.readFileSync("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt");
+
+              function mlflowGet(path) {
+                return new Promise((resolve, reject) => {
+                  const url = new URL(path, MLFLOW_URI);
+                  const mod = url.protocol === "https:" ? https : http;
+                  const headers = { "Accept": "application/json" };
+                  // Add SA token for RHOAI auth
+                  if (K8S_TOKEN) headers["Authorization"] = "Bearer " + K8S_TOKEN;
+                  const req = mod.get(url.href, { headers, rejectUnauthorized: false }, (res) => {
+                    const chunks = [];
+                    res.on("data", c => chunks.push(c));
+                    res.on("end", () => {
+                      try { resolve(JSON.parse(Buffer.concat(chunks).toString())); }
+                      catch (e) { resolve(null); }
+                    });
+                  });
+                  req.on("error", () => resolve(null));
+                  req.setTimeout(30000, () => { req.destroy(); resolve(null); });
+                });
+              }
+
+              async function main() {
+                const now = new Date();
+                let report = "=== MLOps Monitor Report ===\n";
+                report += "Generated: " + now.toISOString() + "\n";
+                report += "MLflow URI: " + (MLFLOW_URI || "NOT SET") + "\n";
+                report += "Experiment: " + EXPERIMENT_NAME + "\n\n";
+
+                if (!MLFLOW_URI) {
+                  report += "ERROR: MLFLOW_TRACKING_URI not configured.\n";
+                  report += "Set it in mlops-monitor-secrets to enable MLflow monitoring.\n";
+                  console.log(report);
+                  await updateConfigMap(report);
+                  return;
+                }
+
+                // 1. Get experiment ID
+                const expData = await mlflowGet("/api/2.0/mlflow/experiments/get-by-name?experiment_name=" + encodeURIComponent(EXPERIMENT_NAME));
+                if (!expData || !expData.experiment) {
+                  report += "WARNING: Experiment \"" + EXPERIMENT_NAME + "\" not found in MLflow.\n";
+                  report += "The NPS Agent may not have sent any traces yet.\n";
+                  console.log(report);
+                  await updateConfigMap(report);
+                  return;
+                }
+
+                const expId = expData.experiment.experiment_id;
+                report += "Experiment ID: " + expId + "\n\n";
+
+                // 2. Search for recent traces
+                const traceData = await mlflowGet("/api/2.0/mlflow/traces?experiment_id=" + expId + "&max_results=" + MAX_TRACES + "&order_by=timestamp_ms+DESC");
+                const traces = traceData?.traces || [];
+
+                report += "--- Trace Summary (last " + MAX_TRACES + " traces) ---\n";
+                report += "Total traces found: " + traces.length + "\n";
+
+                if (traces.length === 0) {
+                  report += "No traces found. The NPS Agent may not have received any requests yet.\n";
+                  console.log(report);
+                  await updateConfigMap(report);
+                  return;
+                }
+
+                // 3. Compute stats
+                let totalLatency = 0;
+                let errorCount = 0;
+                let statusCounts = {};
+                let oldest = null;
+                let newest = null;
+
+                for (const trace of traces) {
+                  const info = trace.info || trace;
+                  const status = info.status || "UNKNOWN";
+                  statusCounts[status] = (statusCounts[status] || 0) + 1;
+
+                  if (status === "ERROR" || status === "INTERNAL_ERROR") errorCount++;
+
+                  const startMs = parseInt(info.timestamp_ms || info.request_time || 0);
+                  const durationMs = parseInt(info.execution_time_ms || info.execution_duration || 0);
+                  if (durationMs > 0) totalLatency += durationMs;
+
+                  if (!oldest || startMs < oldest) oldest = startMs;
+                  if (!newest || startMs > newest) newest = startMs;
+                }
+
+                const avgLatency = traces.length > 0 ? (totalLatency / traces.length / 1000).toFixed(1) : 0;
+                const errorRate = traces.length > 0 ? ((errorCount / traces.length) * 100).toFixed(1) : 0;
+
+                report += "Time range: " + (oldest ? new Date(oldest).toISOString() : "N/A") + " to " + (newest ? new Date(newest).toISOString() : "N/A") + "\n";
+                report += "Average latency: " + avgLatency + "s\n";
+                report += "Error rate: " + errorRate + "% (" + errorCount + "/" + traces.length + ")\n";
+                report += "Status breakdown:\n";
+                for (const [status, count] of Object.entries(statusCounts)) {
+                  report += "  " + status + ": " + count + "\n";
+                }
+                report += "\n";
+
+                // 4. Check for evaluation runs
+                report += "--- Evaluation Data ---\n";
+                const runsData = await mlflowGet("/api/2.0/mlflow/runs/search?experiment_ids=[%22" + expId + "%22]&filter_string=tags.mlflow.runName+LIKE+%27%25evaluation%25%27&max_results=5&order_by=start_time+DESC");
+                const evalRuns = runsData?.runs || [];
+
+                if (evalRuns.length === 0) {
+                  report += "No evaluation runs found.\n";
+                } else {
+                  report += "Recent evaluation runs: " + evalRuns.length + "\n";
+                  for (const run of evalRuns) {
+                    const name = run.info?.run_name || run.info?.run_id || "unknown";
+                    const startTime = run.info?.start_time ? new Date(parseInt(run.info.start_time)).toISOString() : "N/A";
+                    report += "  Run: " + name + " (" + startTime + ")\n";
+                    const metrics = run.data?.metrics || [];
+                    for (const m of metrics) {
+                      report += "    " + m.key + ": " + parseFloat(m.value).toFixed(3) + "\n";
+                    }
+                  }
+                }
+                report += "\n";
+
+                // 5. Health assessment
+                report += "--- Health Assessment ---\n";
+                if (errorRate > 10) report += "CRITICAL: Error rate " + errorRate + "% exceeds 10% threshold\n";
+                else if (errorRate > 5) report += "WARNING: Error rate " + errorRate + "% exceeds 5% threshold\n";
+                else report += "OK: Error rate " + errorRate + "% is within normal range\n";
+
+                if (avgLatency > 60) report += "WARNING: Average latency " + avgLatency + "s is very high (>60s)\n";
+                else if (avgLatency > 30) report += "NOTE: Average latency " + avgLatency + "s is elevated (>30s)\n";
+                else report += "OK: Average latency " + avgLatency + "s is acceptable\n";
+
+                console.log(report);
+                await updateConfigMap(report);
+              }
+
+              function updateConfigMap(report) {
+                return new Promise((resolve) => {
+                  const body = JSON.stringify({ data: { "report.txt": report } });
+                  const req = https.request({
+                    hostname: "kubernetes.default.svc",
+                    path: "/api/v1/namespaces/" + K8S_NS + "/configmaps/mlops-report-latest",
+                    method: "PATCH",
+                    ca: K8S_CA,
+                    headers: {
+                      "Authorization": "Bearer " + K8S_TOKEN,
+                      "Content-Type": "application/strategic-merge-patch+json",
+                      "Content-Length": Buffer.byteLength(body)
+                    }
+                  }, (res) => {
+                    if (res.statusCode === 200) console.log("ConfigMap updated");
+                    else console.error("ConfigMap update failed: " + res.statusCode);
+                    resolve();
+                  });
+                  req.on("error", (e) => { console.error("ConfigMap update error: " + e.message); resolve(); });
+                  req.write(body);
+                  req.end();
+                });
+              }
+
+              main().catch(e => { console.error("Fatal: " + e.message); process.exit(1); });
+              '

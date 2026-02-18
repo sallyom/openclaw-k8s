@@ -109,7 +109,7 @@ fi
 
 log_info "Namespace: $OPENCLAW_NAMESPACE"
 log_info "Prefix:    $OPENCLAW_PREFIX"
-log_info "Agents:    ${OPENCLAW_PREFIX}_${SHADOWMAN_CUSTOM_NAME}, ${OPENCLAW_PREFIX}_resource_optimizer"
+log_info "Agents:    ${OPENCLAW_PREFIX}_${SHADOWMAN_CUSTOM_NAME}, ${OPENCLAW_PREFIX}_resource_optimizer, ${OPENCLAW_PREFIX}_mlops_monitor"
 echo ""
 
 # Verify cluster connection
@@ -120,7 +120,7 @@ fi
 log_success "Connected to cluster, namespace exists"
 
 # Update namespace annotations with agent roster
-AGENT_LIST="${OPENCLAW_PREFIX}_${SHADOWMAN_CUSTOM_NAME},${OPENCLAW_PREFIX}_resource_optimizer"
+AGENT_LIST="${OPENCLAW_PREFIX}_${SHADOWMAN_CUSTOM_NAME},${OPENCLAW_PREFIX}_resource_optimizer,${OPENCLAW_PREFIX}_mlops_monitor"
 $KUBECTL annotate namespace "$OPENCLAW_NAMESPACE" \
   "openclaw.dev/agent-name=$SHADOWMAN_DISPLAY_NAME" \
   "openclaw.dev/agent-id=${OPENCLAW_PREFIX}_${SHADOWMAN_CUSTOM_NAME}" \
@@ -169,7 +169,16 @@ fi
 log_info "Deploying agent ConfigMaps..."
 $KUBECTL apply -f "$REPO_ROOT/manifests/openclaw/agents/shadowman/shadowman-agent.yaml"
 $KUBECTL apply -f "$REPO_ROOT/manifests/openclaw/agents/resource-optimizer/resource-optimizer-agent.yaml"
+$KUBECTL apply -f "$REPO_ROOT/manifests/openclaw/agents/mlops-monitor/mlops-monitor-agent.yaml"
 log_success "Agent ConfigMaps deployed"
+echo ""
+
+# Deploy NPS skill ConfigMap
+log_info "Deploying NPS skill..."
+$KUBECTL kustomize "$REPO_ROOT/manifests/openclaw/skills" \
+  | sed "s/namespace: openclaw/namespace: $OPENCLAW_NAMESPACE/g" \
+  | $KUBECTL apply -f -
+log_success "NPS skill ConfigMap deployed"
 echo ""
 
 # Setup resource-optimizer RBAC (ServiceAccount + read-only access to resource-demo)
@@ -189,6 +198,36 @@ $KUBECTL apply -f "$REPO_ROOT/manifests/openclaw/agents/resource-optimizer/resou
 log_success "Resource-optimizer RBAC, demo workloads, report ConfigMap, and CronJob applied"
 echo ""
 
+# Setup mlops-monitor RBAC and CronJob
+log_info "Setting up mlops-monitor..."
+$KUBECTL apply -f "$REPO_ROOT/manifests/openclaw/agents/mlops-monitor/mlops-monitor-rbac.yaml"
+# Pre-create the mlops-report-latest ConfigMap (CronJob will update it)
+$KUBECTL create configmap mlops-report-latest \
+  --from-literal=report.txt="No report generated yet. The mlops-report CronJob has not run." \
+  -n "$OPENCLAW_NAMESPACE" --dry-run=client -o yaml | $KUBECTL apply -f -
+# Create mlops-monitor secrets (MLFLOW_TRACKING_URI)
+MLFLOW_URI="${MLFLOW_TRACKING_URI:-}"
+if [ -z "$MLFLOW_URI" ]; then
+  log_info "MLflow tracking URI (for mlops-monitor to query NPS Agent traces):"
+  read -p "  Enter URI (or press Enter to skip): " MLFLOW_URI
+fi
+if [ -n "$MLFLOW_URI" ]; then
+  $KUBECTL create secret generic mlops-monitor-secrets \
+    --from-literal=MLFLOW_TRACKING_URI="$MLFLOW_URI" \
+    -n "$OPENCLAW_NAMESPACE" --dry-run=client -o yaml | $KUBECTL apply -f -
+  log_success "MLflow tracking URI configured"
+else
+  # Create empty secret so CronJob doesn't crash
+  $KUBECTL create secret generic mlops-monitor-secrets \
+    --from-literal=MLFLOW_TRACKING_URI="" \
+    -n "$OPENCLAW_NAMESPACE" --dry-run=client -o yaml | $KUBECTL apply -f -
+  log_warn "No MLflow URI set — mlops-monitor reports will show an error until configured"
+fi
+# Deploy CronJob
+$KUBECTL apply -f "$REPO_ROOT/manifests/openclaw/agents/mlops-monitor/mlops-monitor-cronjob.yaml"
+log_success "MLOps-monitor RBAC, report ConfigMap, and CronJob applied"
+echo ""
+
 # Restart OpenClaw to pick up new config
 log_info "Restarting OpenClaw to load agents..."
 $KUBECTL rollout restart deployment/openclaw -n "$OPENCLAW_NAMESPACE"
@@ -199,7 +238,7 @@ echo ""
 
 # Install agent AGENTS.md and agent.json into each workspace
 log_info "Installing agent identity files into workspaces..."
-for agent_cfg in shadowman:workspace-${OPENCLAW_PREFIX}_${SHADOWMAN_CUSTOM_NAME} resource-optimizer:workspace-${OPENCLAW_PREFIX}_resource_optimizer; do
+for agent_cfg in shadowman:workspace-${OPENCLAW_PREFIX}_${SHADOWMAN_CUSTOM_NAME} resource-optimizer:workspace-${OPENCLAW_PREFIX}_resource_optimizer mlops-monitor:workspace-${OPENCLAW_PREFIX}_mlops_monitor; do
   AGENT_NAME="${agent_cfg%%:*}"
   WORKSPACE="${agent_cfg#*:}"
   WORKSPACE_DIR="/home/node/.openclaw/${WORKSPACE}"
@@ -213,6 +252,14 @@ for agent_cfg in shadowman:workspace-${OPENCLAW_PREFIX}_${SHADOWMAN_CUSTOM_NAME}
   done
   log_success "  ${AGENT_NAME} → ${WORKSPACE}"
 done
+echo ""
+
+# Install NPS skill into workspace
+log_info "Installing NPS skill into workspace..."
+$KUBECTL get configmap nps-skill -n "$OPENCLAW_NAMESPACE" -o jsonpath='{.data.SKILL\.md}' | \
+  $KUBECTL exec -i deployment/openclaw -n "$OPENCLAW_NAMESPACE" -c gateway -- \
+    sh -c 'mkdir -p /home/node/.openclaw/skills/nps && cat > /home/node/.openclaw/skills/nps/SKILL.md'
+log_success "NPS skill installed"
 echo ""
 
 # Inject resource-optimizer SA token into workspace .env
@@ -265,9 +312,14 @@ echo ""
 echo "Agents deployed:"
 echo "  ${OPENCLAW_PREFIX}_${SHADOWMAN_CUSTOM_NAME}:            interactive assistant"
 echo "  ${OPENCLAW_PREFIX}_resource_optimizer:  cost analysis (report CronJob every 8h)"
+echo "  ${OPENCLAW_PREFIX}_mlops_monitor:       MLOps monitoring (report CronJob every 6h)"
+echo ""
+echo "Skills deployed:"
+echo "  nps:  query the NPS Agent for national park information"
 echo ""
 echo "Agent cron jobs:"
 echo "  resource-optimizer-analysis:  reads report, messages ${SHADOWMAN_DISPLAY_NAME} (9 AM + 5 PM UTC)"
+echo "  mlops-monitor-analysis:      reads MLflow report, messages ${SHADOWMAN_DISPLAY_NAME} (10 AM + 4 PM UTC)"
 echo ""
 echo "Cleanup: cd manifests/openclaw/agents && ./remove-custom-agents.sh"
 echo ""
