@@ -13,4 +13,3 @@ spec:
   resources:
     requests:
       storage: 10Gi
-  ${{?STORAGE_CLASS}}storageClassName: ${STORAGE_CLASS}${{/STORAGE_CLASS}}

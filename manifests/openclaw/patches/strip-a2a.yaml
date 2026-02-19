@@ -1,0 +1,40 @@
+# Strategic merge patch: remove A2A/AuthBridge containers and volumes
+# Applied by setup.sh when --with-a2a is NOT set (default: A2A disabled)
+#
+# Removes:
+#   Init containers: proxy-init (iptables for Envoy interception)
+#   Containers: a2a-bridge, spiffe-helper, client-registration, envoy-proxy
+#   Volumes: shared-data, svid-output, spire-agent-socket, authbridge configs, a2a-bridge-script
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openclaw
+  namespace: openclaw
+spec:
+  template:
+    spec:
+      initContainers:
+      - name: proxy-init
+        $patch: delete
+      containers:
+      - name: a2a-bridge
+        $patch: delete
+      - name: spiffe-helper
+        $patch: delete
+      - name: client-registration
+        $patch: delete
+      - name: envoy-proxy
+        $patch: delete
+      volumes:
+      - name: shared-data
+        $patch: delete
+      - name: svid-output
+        $patch: delete
+      - name: spire-agent-socket
+        $patch: delete
+      - name: authbridge-spiffe-helper-config
+        $patch: delete
+      - name: authbridge-envoy-config
+        $patch: delete
+      - name: a2a-bridge-script
+        $patch: delete

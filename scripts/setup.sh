@@ -5,8 +5,10 @@
 # Use this for complete deployment of OpenClaw + Agents
 #
 # Usage:
-#   ./setup.sh                    # Deploy to OpenShift (default)
+#   ./setup.sh                    # Deploy to OpenShift (default, no A2A)
+#   ./setup.sh --with-a2a         # Deploy with A2A bridge + AuthBridge sidecars
 #   ./setup.sh --k8s              # Deploy to vanilla Kubernetes (minikube, kind, etc.)
+#   ./setup.sh --k8s --with-a2a   # K8s with A2A
 #
 # This script:
 #   - Generates all secrets (gateway, OAuth) into .env
@@ -36,9 +38,11 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Parse flags
 K8S_MODE=false
+A2A_ENABLED=false
 for arg in "$@"; do
   case "$arg" in
     --k8s) K8S_MODE=true ;;
+    --with-a2a) A2A_ENABLED=true ;;
   esac
 done
 
@@ -158,8 +162,8 @@ if [ -f "$REPO_ROOT/.env" ]; then
   _ENV_REUSE=true
 fi
 
-# Prompt for OpenClaw namespace prefix (skip if already set from .env)
-if [ -n "${OPENCLAW_PREFIX:-}" ]; then
+# Prompt for OpenClaw namespace prefix (skip if already set from local .env)
+if $_ENV_REUSE && [ -n "${OPENCLAW_PREFIX:-}" ]; then
   OPENCLAW_NAMESPACE="${OPENCLAW_PREFIX}-openclaw"
   SHADOWMAN_CUSTOM_NAME="${SHADOWMAN_CUSTOM_NAME:-shadowman}"
   SHADOWMAN_DISPLAY_NAME="${SHADOWMAN_DISPLAY_NAME:-Shadowman}"
@@ -226,6 +230,14 @@ if $_ENV_REUSE; then
   GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT:-}"
   GOOGLE_CLOUD_LOCATION="${GOOGLE_CLOUD_LOCATION:-}"
   VERTEX_SA_JSON_PATH="${VERTEX_SA_JSON_PATH:-}"
+  # A2A: CLI flag overrides .env (--with-a2a on CLI wins over .env value)
+  if [ "$A2A_ENABLED" != "true" ]; then
+    A2A_ENABLED="${A2A_ENABLED:-false}"
+  fi
+  KEYCLOAK_URL="${KEYCLOAK_URL:-}"
+  KEYCLOAK_REALM="${KEYCLOAK_REALM:-}"
+  KEYCLOAK_ADMIN_USERNAME="${KEYCLOAK_ADMIN_USERNAME:-}"
+  KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:-}"
 
   # If the gateway token is missing, the .env is corrupted — regenerate it
   if [ -z "$OPENCLAW_GATEWAY_TOKEN" ]; then
@@ -297,6 +309,33 @@ else
     log_info "Skipped"
   fi
   echo ""
+
+  # Prompt for Keycloak config (only when --with-a2a is set)
+  if [ "$A2A_ENABLED" = "true" ]; then
+    log_info "A2A AuthBridge requires a Keycloak instance for token exchange."
+    read -p "  Keycloak URL (e.g., https://keycloak.apps.mycluster.com): " KEYCLOAK_URL
+    if [ -z "$KEYCLOAK_URL" ]; then
+      log_error "Keycloak URL is required for A2A AuthBridge"
+      exit 1
+    fi
+    read -p "  Keycloak realm [spiffe-demo]: " KEYCLOAK_REALM
+    KEYCLOAK_REALM=${KEYCLOAK_REALM:-spiffe-demo}
+    read -p "  Keycloak admin username [admin]: " KEYCLOAK_ADMIN_USERNAME
+    KEYCLOAK_ADMIN_USERNAME=${KEYCLOAK_ADMIN_USERNAME:-admin}
+    read -sp "  Keycloak admin password: " KEYCLOAK_ADMIN_PASSWORD
+    echo
+    if [ -z "$KEYCLOAK_ADMIN_PASSWORD" ]; then
+      log_error "Keycloak admin password is required"
+      exit 1
+    fi
+    log_success "Keycloak: $KEYCLOAK_URL realm=$KEYCLOAK_REALM"
+  else
+    KEYCLOAK_URL=""
+    KEYCLOAK_REALM=""
+    KEYCLOAK_ADMIN_USERNAME=""
+    KEYCLOAK_ADMIN_PASSWORD=""
+  fi
+  echo ""
 fi
 
 # Warn about old manifests-private/ directory
@@ -329,6 +368,11 @@ VERTEX_SA_JSON_PATH=$VERTEX_SA_JSON_PATH
 SHADOWMAN_CUSTOM_NAME=$SHADOWMAN_CUSTOM_NAME
 SHADOWMAN_DISPLAY_NAME=$SHADOWMAN_DISPLAY_NAME
 MLFLOW_TRACKING_URI=$MLFLOW_TRACKING_URI
+A2A_ENABLED=$A2A_ENABLED
+KEYCLOAK_URL=$KEYCLOAK_URL
+KEYCLOAK_REALM=$KEYCLOAK_REALM
+KEYCLOAK_ADMIN_USERNAME=$KEYCLOAK_ADMIN_USERNAME
+KEYCLOAK_ADMIN_PASSWORD=$KEYCLOAK_ADMIN_PASSWORD
 EOF
 log_success ".env file created at $REPO_ROOT/.env"
 echo ""
@@ -352,6 +396,12 @@ export VERTEX_ENABLED="${VERTEX_ENABLED:-false}"
 export GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT:-}"
 export GOOGLE_CLOUD_LOCATION="${GOOGLE_CLOUD_LOCATION:-}"
 
+# Keycloak defaults (for A2A AuthBridge)
+export KEYCLOAK_URL="${KEYCLOAK_URL:-}"
+export KEYCLOAK_REALM="${KEYCLOAK_REALM:-}"
+export KEYCLOAK_ADMIN_USERNAME="${KEYCLOAK_ADMIN_USERNAME:-}"
+export KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD:-}"
+
 # Agent model priority: Anthropic API > Vertex (anthropic or google) > in-cluster
 # VERTEX_PROVIDER controls which Vertex provider: "anthropic" or "google" (default)
 export VERTEX_PROVIDER="${VERTEX_PROVIDER:-google}"
@@ -369,7 +419,7 @@ else
 fi
 
 # Explicit variable list to protect {agentId} and other non-env placeholders
-ENVSUBST_VARS='${CLUSTER_DOMAIN} ${OPENCLAW_PREFIX} ${OPENCLAW_NAMESPACE} ${OPENCLAW_GATEWAY_TOKEN} ${OPENCLAW_OAUTH_CLIENT_SECRET} ${OPENCLAW_OAUTH_COOKIE_SECRET} ${ANTHROPIC_API_KEY} ${SHADOWMAN_CUSTOM_NAME} ${SHADOWMAN_DISPLAY_NAME} ${MODEL_ENDPOINT} ${DEFAULT_AGENT_MODEL} ${GOOGLE_CLOUD_PROJECT} ${GOOGLE_CLOUD_LOCATION}'
+ENVSUBST_VARS='${CLUSTER_DOMAIN} ${OPENCLAW_PREFIX} ${OPENCLAW_NAMESPACE} ${OPENCLAW_GATEWAY_TOKEN} ${OPENCLAW_OAUTH_CLIENT_SECRET} ${OPENCLAW_OAUTH_COOKIE_SECRET} ${ANTHROPIC_API_KEY} ${SHADOWMAN_CUSTOM_NAME} ${SHADOWMAN_DISPLAY_NAME} ${MODEL_ENDPOINT} ${DEFAULT_AGENT_MODEL} ${GOOGLE_CLOUD_PROJECT} ${GOOGLE_CLOUD_LOCATION} ${KEYCLOAK_URL} ${KEYCLOAK_REALM} ${KEYCLOAK_ADMIN_USERNAME} ${KEYCLOAK_ADMIN_PASSWORD}'
 
 for tpl in $(find "$REPO_ROOT/manifests" "$REPO_ROOT/observability" -name '*.envsubst'); do
   yaml="${tpl%.envsubst}"
@@ -385,10 +435,72 @@ else
   OPENCLAW_OVERLAY="$REPO_ROOT/manifests/openclaw/overlays/openshift"
 fi
 
+# Strip A2A containers/volumes/resources when --with-a2a is not set (default)
+if [ "$A2A_ENABLED" != "true" ]; then
+  log_info "A2A disabled (use --with-a2a to enable). Stripping A2A resources..."
+  # Copy strip-a2a patch into overlay (kustomize requires patches within overlay dir)
+  cp "$REPO_ROOT/manifests/openclaw/patches/strip-a2a.yaml" "$OPENCLAW_OVERLAY/strip-a2a.yaml"
+  cat >> "$OPENCLAW_OVERLAY/kustomization.yaml" <<'STRIP_A2A'
+  # A2A disabled — strip containers, volumes, and resources
+  - path: strip-a2a.yaml
+  - target:
+      kind: ConfigMap
+      name: a2a-bridge
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: a2a-bridge
+  - target:
+      kind: ConfigMap
+      name: authbridge-environments
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: authbridge-environments
+  - target:
+      kind: ConfigMap
+      name: authbridge-spiffe-helper-config
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: authbridge-spiffe-helper-config
+  - target:
+      kind: ConfigMap
+      name: authbridge-envoy-config
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: authbridge-envoy-config
+  - target:
+      kind: Secret
+      name: authbridge-proxy-config
+    patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: authbridge-proxy-config
+STRIP_A2A
+  log_success "A2A patches appended to kustomization.yaml"
+else
+  log_info "A2A enabled — deploying with A2A bridge + AuthBridge sidecars"
+fi
+echo ""
+
 # Create namespace
 log_info "Creating namespace..."
 $KUBECTL create namespace "$OPENCLAW_NAMESPACE" --dry-run=client -o yaml | $KUBECTL apply -f - > /dev/null
-$KUBECTL label namespace "$OPENCLAW_NAMESPACE" kagenti-enabled=true --overwrite > /dev/null
+if [ "$A2A_ENABLED" = "true" ]; then
+  $KUBECTL label namespace "$OPENCLAW_NAMESPACE" kagenti-enabled=true --overwrite > /dev/null
+fi
 $KUBECTL annotate namespace "$OPENCLAW_NAMESPACE" \
   "openclaw.dev/owner=$OPENCLAW_PREFIX" \
   "openclaw.dev/agent-name=$SHADOWMAN_DISPLAY_NAME" \
@@ -414,16 +526,20 @@ if $K8S_MODE; then
 else
   # Deploy cluster-scoped resources separately (can't go through Kustomize namespace transformer)
 
-  # SCC definition + RBAC grant
-  log_info "Applying AuthBridge SCC and RBAC grant..."
-  if oc apply -f "$REPO_ROOT/manifests/openclaw/base/openclaw-scc.yaml" 2>/dev/null && \
-     oc apply -f "$OPENCLAW_OVERLAY/scc-rbac.yaml" 2>/dev/null; then
-    log_success "SCC openclaw-authbridge applied and granted to openclaw-oauth-proxy"
+  # SCC definition + RBAC grant (only needed for A2A AuthBridge sidecars)
+  if [ "$A2A_ENABLED" = "true" ]; then
+    log_info "Applying AuthBridge SCC and RBAC grant..."
+    if oc apply -f "$REPO_ROOT/manifests/openclaw/base/openclaw-scc.yaml" 2>/dev/null && \
+       oc apply -f "$OPENCLAW_OVERLAY/scc-rbac.yaml" 2>/dev/null; then
+      log_success "SCC openclaw-authbridge applied and granted to openclaw-oauth-proxy"
+    else
+      log_warn "Could not apply SCC (requires cluster-admin permissions)"
+      log_warn "Ask your cluster admin to run:"
+      echo "    oc apply -f $REPO_ROOT/manifests/openclaw/base/openclaw-scc.yaml"
+      echo "    oc apply -f $OPENCLAW_OVERLAY/scc-rbac.yaml"
+    fi
   else
-    log_warn "Could not apply SCC (requires cluster-admin permissions)"
-    log_warn "Ask your cluster admin to run:"
-    echo "    oc apply -f $REPO_ROOT/manifests/openclaw/base/openclaw-scc.yaml"
-    echo "    oc apply -f $OPENCLAW_OVERLAY/scc-rbac.yaml"
+    log_info "Skipping AuthBridge SCC (A2A disabled)"
   fi
 
   # OAuthClient
@@ -445,32 +561,41 @@ log_info "  ✓ PodDisruptionBudget (HA)"
 log_info "  ✓ Read-only filesystem"
 log_info "  ✓ Health probes"
 log_info "  ✓ Device authentication"
+if [ "$A2A_ENABLED" = "true" ]; then
+  log_info "  ✓ A2A bridge + AuthBridge sidecars"
+else
+  log_info "  ○ A2A disabled (use --with-a2a to enable)"
+fi
 $KUBECTL apply -k "$OPENCLAW_OVERLAY"
 log_success "OpenClaw deployed with enterprise security"
 echo ""
 
-# Install A2A skill (cross-instance agent communication)
-log_info "Installing A2A skill..."
-SKILLS_DIR="$REPO_ROOT/manifests/openclaw/skills"
-$KUBECTL kustomize "$SKILLS_DIR" \
-  | sed "s/namespace: openclaw/namespace: $OPENCLAW_NAMESPACE/g" \
-  | $KUBECTL apply -f -
-log_success "A2A skill ConfigMap deployed"
+# Install A2A skill (only when A2A is enabled)
+if [ "$A2A_ENABLED" = "true" ]; then
+  log_info "Installing A2A skill..."
+  SKILLS_DIR="$REPO_ROOT/manifests/openclaw/skills"
+  $KUBECTL kustomize "$SKILLS_DIR" \
+    | sed "s/namespace: openclaw/namespace: $OPENCLAW_NAMESPACE/g" \
+    | $KUBECTL apply -f -
+  log_success "A2A skill ConfigMap deployed"
 
-# Wait for pod to be ready before copying skill into workspace
-log_info "Waiting for OpenClaw pod to start..."
-if $KUBECTL rollout status deployment/openclaw -n "$OPENCLAW_NAMESPACE" --timeout=300s 2>/dev/null; then
-  POD=$($KUBECTL get pods -n "$OPENCLAW_NAMESPACE" -l app=openclaw --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-  if [ -n "$POD" ]; then
-    $KUBECTL get configmap a2a-skill -n "$OPENCLAW_NAMESPACE" -o jsonpath='{.data.SKILL\.md}' | \
-      $KUBECTL exec -i -n "$OPENCLAW_NAMESPACE" "$POD" -c gateway -- \
-        sh -c 'mkdir -p /home/node/.openclaw/skills/a2a && cat > /home/node/.openclaw/skills/a2a/SKILL.md'
-    log_success "A2A skill installed into workspace"
+  # Wait for pod to be ready before copying skill into workspace
+  log_info "Waiting for OpenClaw pod to start..."
+  if $KUBECTL rollout status deployment/openclaw -n "$OPENCLAW_NAMESPACE" --timeout=300s 2>/dev/null; then
+    POD=$($KUBECTL get pods -n "$OPENCLAW_NAMESPACE" -l app=openclaw --field-selector=status.phase=Running -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+    if [ -n "$POD" ]; then
+      $KUBECTL get configmap a2a-skill -n "$OPENCLAW_NAMESPACE" -o jsonpath='{.data.SKILL\.md}' | \
+        $KUBECTL exec -i -n "$OPENCLAW_NAMESPACE" "$POD" -c gateway -- \
+          sh -c 'mkdir -p /home/node/.openclaw/skills/a2a && cat > /home/node/.openclaw/skills/a2a/SKILL.md'
+      log_success "A2A skill installed into workspace"
+    else
+      log_warn "Could not find running pod — run install-a2a-skill.sh manually after pod starts"
+    fi
   else
-    log_warn "Could not find running pod — run install-a2a-skill.sh manually after pod starts"
+    log_warn "Pod not ready yet — run install-a2a-skill.sh manually after pod starts"
   fi
 else
-  log_warn "Pod not ready yet — run install-a2a-skill.sh manually after pod starts"
+  log_info "Skipping A2A skill installation (A2A disabled)"
 fi
 echo ""
 

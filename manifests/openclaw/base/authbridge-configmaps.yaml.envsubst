@@ -1,20 +1,27 @@
-# AuthBridge configuration for NPS Agent
-# Same config as OpenClaw AuthBridge — uses the same Keycloak/SPIRE infrastructure
-# See manifests/openclaw/base/authbridge-configmaps.yaml for detailed comments
+# AuthBridge configuration for Kagenti Identity & Auth integration
+# Enables SPIFFE workload identity + Keycloak token exchange for OpenClaw
+#
+# Components:
+#   1. spiffe-helper: gets SVIDs from SPIRE agent
+#   2. client-registration: registers with Keycloak using SPIFFE ID
+#   3. envoy-proxy: transparent token exchange on outbound/inbound traffic
+#
+# Values are substituted by setup.sh from .env (see --with-a2a flag)
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: authbridge-environments
+  namespace: openclaw
   labels:
-    app: nps-agent
+    app: openclaw
     app.kubernetes.io/component: authbridge
 data:
   SPIRE_ENABLED: "true"
-  KEYCLOAK_URL: "https://keycloak-spiffe-demo.apps.ocp-beta-test.nerc.mghpcc.org"
-  KEYCLOAK_REALM: "spiffe-demo"
-  KEYCLOAK_ADMIN_USERNAME: "admin"
-  KEYCLOAK_ADMIN_PASSWORD: "admin123"
+  KEYCLOAK_URL: "${KEYCLOAK_URL}"
+  KEYCLOAK_REALM: "${KEYCLOAK_REALM}"
+  KEYCLOAK_ADMIN_USERNAME: "${KEYCLOAK_ADMIN_USERNAME}"
+  KEYCLOAK_ADMIN_PASSWORD: "${KEYCLOAK_ADMIN_PASSWORD}"
   KEYCLOAK_TOKEN_EXCHANGE_ENABLED: "true"
   KEYCLOAK_CLIENT_REGISTRATION_ENABLED: "true"
 
@@ -23,8 +30,9 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: authbridge-spiffe-helper-config
+  namespace: openclaw
   labels:
-    app: nps-agent
+    app: openclaw
     app.kubernetes.io/component: authbridge
 data:
   helper.conf: |
@@ -43,8 +51,9 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: authbridge-envoy-config
+  namespace: openclaw
   labels:
-    app: nps-agent
+    app: openclaw
     app.kubernetes.io/component: authbridge
 data:
   envoy.yaml: |

@@ -161,8 +161,14 @@ EOF
 log_success "SCC granted to nps-agent-oauth-proxy"
 echo ""
 
-# Apply AuthBridge ConfigMaps + Secret
+# Generate AuthBridge manifests from envsubst templates (Keycloak vars from .env)
 log_info "Deploying AuthBridge configuration..."
+AUTHBRIDGE_VARS='${KEYCLOAK_URL} ${KEYCLOAK_REALM} ${KEYCLOAK_ADMIN_USERNAME} ${KEYCLOAK_ADMIN_PASSWORD}'
+for tpl in "$REPO_ROOT/manifests/nps-agent/authbridge-configmaps.yaml.envsubst" \
+           "$REPO_ROOT/manifests/nps-agent/authbridge-secret.yaml.envsubst"; do
+  yaml="${tpl%.envsubst}"
+  envsubst "$AUTHBRIDGE_VARS" < "$tpl" > "$yaml"
+done
 $KUBECTL apply -f "$REPO_ROOT/manifests/nps-agent/authbridge-configmaps.yaml" -n "$NPS_AGENT_NAMESPACE"
 $KUBECTL apply -f "$REPO_ROOT/manifests/nps-agent/authbridge-secret.yaml" -n "$NPS_AGENT_NAMESPACE"
 log_success "AuthBridge configuration deployed"

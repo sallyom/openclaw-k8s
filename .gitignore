@@ -49,6 +49,12 @@ manifests/openclaw/agents/mlops-monitor/mlops-monitor-agent.yaml
 manifests/openclaw/agents/mlops-monitor/mlops-monitor-cronjob.yaml
 manifests/openclaw/agents/mlops-monitor/mlops-monitor-rbac.yaml
 manifests/openclaw/overlays/openshift/scc-rbac.yaml
+manifests/openclaw/overlays/openshift/strip-a2a.yaml
+manifests/openclaw/overlays/k8s/strip-a2a.yaml
 manifests/openclaw/base/openclaw-agentcard.yaml
+manifests/openclaw/base/authbridge-configmaps.yaml
+manifests/openclaw/base/authbridge-secret.yaml
+manifests/nps-agent/authbridge-configmaps.yaml
+manifests/nps-agent/authbridge-secret.yaml
 manifests/nps-agent/nps-agent-deployment.yaml
 manifests/nps-agent/nps-agent-eval-job.yaml

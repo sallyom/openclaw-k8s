@@ -12,9 +12,14 @@ spec:
   template:
     spec:
       serviceAccountName: default
+      securityContext:
+        fsGroup: 1000
       initContainers:
       - name: init-config
         image: busybox:latest
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
       containers:
       - name: oauth-proxy
         $patch: delete
