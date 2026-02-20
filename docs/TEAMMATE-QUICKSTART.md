@@ -1,20 +1,20 @@
 # Teammate Quickstart
 
-Get your own OpenClaw instance running and communicate with your teammates' agents via A2A.
+Get your own OpenClaw instance running in minutes.
 
-## What You Need From Your Admin
+## What You Need
 
 - Access to the cluster (`oc login` or `kubectl` configured)
-- The AuthBridge SCC grant (admin runs this after your first deploy — see Step 2)
 - (Optional) An Anthropic API key for Claude-powered agents
 
 ## Model Options
 
-OpenClaw agents need an LLM endpoint. You have three options:
+OpenClaw agents need an LLM endpoint. You have several options:
 
 | Option | When to Use | Details |
 |--------|------------|---------|
 | **Anthropic API key** | You have an Anthropic API key and want to use Claude | Agents use `anthropic/claude-sonnet-4-5` |
+| **Anthropic via Vertex** | Your org has Claude enabled on GCP Vertex AI | Agents use `anthropic-vertex/claude-sonnet-4-5`, billed through GCP |
 | **Google Vertex AI** | Your org has a GCP project with Vertex AI enabled | Agents use `google-vertex/gemini-2.5-pro`, billed through GCP |
 | **In-cluster vLLM** | Your cluster has a GPU node with vLLM deployed | Default `MODEL_ENDPOINT`: `http://vllm.openclaw-llms.svc.cluster.local/v1` |
 | **Your own endpoint** | You already have an OpenAI-compatible model server | Supply your server's `/v1` URL as `MODEL_ENDPOINT` |
@@ -26,82 +26,20 @@ git clone <this-repo>
 cd openclaw-k8s
 
 ./scripts/setup.sh           # OpenShift
-./scripts/setup.sh --k8s     # Kubernetes
+./scripts/setup.sh --k8s     # Kubernetes (KinD, minikube, etc.)
 ```
 
-The script prompts you for three things:
+The script prompts you for:
 
 1. **Namespace prefix** — use your name (e.g., `bob`). Creates `bob-openclaw`.
-2. **Agent name** — pick a name for your agent (e.g., `Shadowman`, `Lynx`, `Atlas`). This is who your teammates see when they communicate with you via A2A.
+2. **Agent name** — pick a name for your agent (e.g., `Shadowman`, `Lynx`, `Atlas`).
 3. **API keys** — Anthropic key (optional), model endpoint, Vertex AI (optional).
 
 After setup completes, your instance has:
 - A gateway with your named agent
-- An **A2A bridge** sidecar (port 8080) so other instances can discover and message your agent
-- **AuthBridge** sidecars (SPIFFE + Envoy) that give your instance a unique cryptographic identity
-- An **A2A skill** so your agent knows how to talk to other instances
+- Control UI + WebChat
 
-## Step 2: Grant the SCC (OpenShift Only)
-
-The AuthBridge sidecars need a custom SCC for iptables and SPIRE CSI access. Ask your admin to run:
-
-```bash
-oc adm policy add-scc-to-user openclaw-authbridge \
-  -z openclaw-oauth-proxy -n <prefix>-openclaw
-```
-
-Then wait for the pod to come up:
-
-```bash
-oc rollout status deployment/openclaw -n <prefix>-openclaw --timeout=600s
-```
-
-## Step 3: Verify Your Identity
-
-Once the pod is running, check that your A2A identity is working:
-
-```bash
-# Check your agent card (what other instances see when they discover you)
-oc exec deployment/openclaw -n <prefix>-openclaw -c gateway -- \
-  curl -s http://localhost:8080/.well-known/agent.json | jq .
-```
-
-You should see your agent name and skills listed. This is the card remote agents fetch before messaging you.
-
-```bash
-# Check your SPIFFE identity
-oc exec deployment/openclaw -n <prefix>-openclaw -c spiffe-helper -- \
-  cat /opt/jwt_svid.token | cut -d. -f2 | base64 -d 2>/dev/null | jq .sub
-```
-
-This shows your cryptographic identity, e.g., `spiffe://demo.example.com/ns/bob-openclaw/sa/openclaw-oauth-proxy`. Every cross-namespace call is authenticated with this identity via Keycloak token exchange.
-
-## Step 4: Talk to a Teammate's Agent
-
-Once a teammate has their instance running, your agent can communicate with theirs. From the OpenClaw WebChat UI, ask your agent:
-
-> Discover what agents are on sally-openclaw
-
-Your agent will use the A2A skill to call `http://openclaw.sally-openclaw.svc.cluster.local:8080/.well-known/agent.json` and show you the available agents.
-
-Then:
-
-> Send a message to Sally's agent introducing yourself
-
-The AuthBridge handles authentication transparently — your agent just makes a plain HTTP call, and Envoy injects the OAuth token.
-
-## Step 5: Deploy Additional Agents (Optional)
-
-To add the resource-optimizer agent (K8s resource analysis with CronJobs):
-
-```bash
-./scripts/setup-agents.sh           # OpenShift
-./scripts/setup-agents.sh --k8s     # Kubernetes
-```
-
-See [ADDITIONAL-AGENTS.md](ADDITIONAL-AGENTS.md) for details.
-
-## Access Your Platform
+## Step 2: Access Your Platform
 
 **OpenShift** — URL shown at the end of `setup.sh` output:
 ```
@@ -118,6 +56,39 @@ grep OPENCLAW_GATEWAY_TOKEN .env
 kubectl port-forward svc/openclaw 18789:18789 -n <prefix>-openclaw
 # Open http://localhost:18789
 ```
+
+## Step 3: Deploy Additional Agents (Optional)
+
+To add the resource-optimizer and mlops-monitor agents:
+
+```bash
+./scripts/setup-agents.sh           # OpenShift
+./scripts/setup-agents.sh --k8s     # Kubernetes
+```
+
+See [ADDITIONAL-AGENTS.md](ADDITIONAL-AGENTS.md) for details.
+
+## Step 4: Enable A2A Communication (Optional, Advanced)
+
+To enable cross-namespace agent communication with zero-trust authentication, redeploy with A2A:
+
+```bash
+./scripts/teardown.sh && ./scripts/setup.sh --with-a2a        # OpenShift
+./scripts/teardown.sh --k8s && ./scripts/setup.sh --k8s --with-a2a  # Kubernetes
+```
+
+This requires SPIRE + Keycloak infrastructure on your cluster. The script will prompt for Keycloak configuration. With A2A enabled, your instance gets:
+- An **A2A bridge** sidecar (port 8080) so other instances can discover and message your agent
+- **AuthBridge** sidecars (SPIFFE + Envoy) for transparent zero-trust identity
+- An **A2A skill** so your agent knows how to talk to other instances
+
+On **OpenShift**, the AuthBridge sidecars need a custom SCC. Ask your admin to run:
+```bash
+oc adm policy add-scc-to-user openclaw-authbridge \
+  -z openclaw-oauth-proxy -n <prefix>-openclaw
+```
+
+See [A2A-ARCHITECTURE.md](A2A-ARCHITECTURE.md) for the full architecture.
 
 ## Quick Iteration
 

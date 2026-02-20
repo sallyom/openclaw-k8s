@@ -1,30 +1,26 @@
 # openclaw-k8s
 
-Deploy OpenClaw — an AI agent runtime platform — on OpenShift or vanilla Kubernetes. Each team member gets their own instance with a named agent. Agents communicate across namespaces using the [A2A protocol](https://github.com/google/A2A) with zero-trust authentication via SPIFFE and Keycloak.
+Deploy [OpenClaw](https://github.com/openclaw) — an AI agent runtime platform — on OpenShift or vanilla Kubernetes. Each team member gets their own instance with a named agent, Control UI, and WebChat.
 
 ## What This Deploys
 
 ```
- Sally's Namespace                          Bob's Namespace
- ┌──────────────────────────────┐          ┌──────────────────────────────┐
- │  sally-openclaw              │          │  bob-openclaw                │
- │                              │   A2A    │                              │
- │  Agent: Lynx                 │◄────────►│  Agent: Shadowman            │
- │  (sally_lynx)                │  JSON-RPC│  (bob_shadowman)             │
- │                              │          │                              │
- │  Gateway + A2A Bridge        │          │  Gateway + A2A Bridge        │
- │  AuthBridge (SPIFFE + Envoy) │          │  AuthBridge (SPIFFE + Envoy) │
- └──────────────────────────────┘          └──────────────────────────────┘
-          │                                          │
-          └──────────── Keycloak ────────────────────┘
-                    (token exchange)
+ ┌──────────────────────────────┐
+ │  sally-openclaw              │
+ │                              │
+ │  Agent: Lynx (sally_lynx)    │
+ │                              │
+ │  Gateway + Control UI        │
+ │  WebChat on port 18789       │
+ └──────────────────────────────┘
 ```
 
 Each instance runs:
 - An AI agent with a customizable name (chosen during setup)
-- An A2A bridge sidecar for cross-instance communication
-- AuthBridge sidecars for transparent zero-trust identity (SPIFFE/Keycloak)
 - Control UI + WebChat on port 18789
+- Hardened gateway container (read-only FS, capabilities dropped, no privilege escalation)
+
+Optionally, enable **A2A (Agent-to-Agent)** communication for cross-namespace agent messaging with zero-trust authentication. See [A2A Communication](#a2a-agent-to-agent-communication) below.
 
 ## Quick Start
 
@@ -34,12 +30,11 @@ Each instance runs:
 
 **OpenShift (default):**
 - `oc` CLI installed and logged in (`oc login`)
-- Cluster-admin access (for OAuthClient and SCC creation)
-- SPIRE + Keycloak infrastructure deployed (see [Cluster Prerequisites](docs/A2A-ARCHITECTURE.md#cluster-prerequisites))
+- Cluster-admin access (for OAuthClient creation)
 
-**Vanilla Kubernetes (minikube, kind, etc.):**
+**Vanilla Kubernetes (KinD, minikube, etc.):**
 - `kubectl` CLI installed with a valid kubeconfig
-- A2A works but without AuthBridge authentication
+- Optional: `./scripts/create-cluster.sh` creates a KinD cluster for local testing
 
 ### Deploy
 
@@ -53,10 +48,10 @@ Each instance runs:
 
 The script will prompt for:
 - **Namespace prefix** (e.g., `sally`) — creates `sally-openclaw` namespace
-- **Agent name** (e.g., `Lynx`) — this is who your teammates see when communicating via A2A
+- **Agent name** (e.g., `Lynx`) — your agent's display name
 - **Anthropic API key** (optional — without it, agents use the in-cluster model)
 
-Then it generates secrets, deploys via kustomize, and installs the A2A skill.
+Then it generates secrets, deploys via kustomize, and starts your instance.
 
 ### Access
 
@@ -79,43 +74,50 @@ kubectl port-forward svc/openclaw 18789:18789 -n <prefix>-openclaw
 ### Verify
 
 ```bash
-# Check pod is running (7 containers: gateway, a2a-bridge, oauth-proxy,
-# spiffe-helper, client-registration, envoy-proxy, otel-collector)
-oc get pods -n <prefix>-openclaw
-
-# Check agent card (A2A discovery)
-oc exec deployment/openclaw -c gateway -- \
-  curl -s http://localhost:8080/.well-known/agent.json | jq .
+# Check pod is running (2 containers: gateway + init-config)
+kubectl get pods -n <prefix>-openclaw
 ```
 
-## Cross-Namespace Agent Communication
+## A2A (Agent-to-Agent) Communication
 
-This is the main demo feature. Once two or more team members have deployed their instances, agents can discover and message each other across namespaces.
+> **Advanced:** A2A requires SPIRE and Keycloak infrastructure on your cluster. Most users don't need this.
 
-### How It Works
+To enable cross-namespace agent communication with zero-trust authentication, deploy with the `--with-a2a` flag:
 
+```bash
+./scripts/setup.sh --with-a2a              # OpenShift
+./scripts/setup.sh --k8s --with-a2a        # Kubernetes
+```
+
+This adds A2A bridge + AuthBridge sidecars (SPIFFE + Envoy + Keycloak) to each instance, enabling agents to discover and message each other across namespaces.
+
+```
+ Sally's Namespace                          Bob's Namespace
+ ┌──────────────────────────────┐          ┌──────────────────────────────┐
+ │  sally-openclaw              │          │  bob-openclaw                │
+ │                              │   A2A    │                              │
+ │  Agent: Lynx                 │◄────────►│  Agent: Shadowman            │
+ │  (sally_lynx)                │  JSON-RPC│  (bob_shadowman)             │
+ │                              │          │                              │
+ │  Gateway + A2A Bridge        │          │  Gateway + A2A Bridge        │
+ │  AuthBridge (SPIFFE + Envoy) │          │  AuthBridge (SPIFFE + Envoy) │
+ └──────────────────────────────┘          └──────────────────────────────┘
+          │                                          │
+          └──────────── Keycloak ────────────────────┘
+                    (token exchange)
+```
+
+**A2A prerequisites:**
+- SPIRE + Keycloak infrastructure deployed (see [Cluster Prerequisites](docs/A2A-ARCHITECTURE.md#cluster-prerequisites))
+- Cluster-admin access (for AuthBridge SCC on OpenShift)
+- The script will prompt for Keycloak URL, realm, and admin credentials
+
+**How it works:**
 1. Each pod runs an **A2A bridge** sidecar on port 8080 that translates [A2A JSON-RPC](https://github.com/google/A2A) to OpenClaw's internal API
 2. The **AuthBridge** (Envoy + SPIFFE + Keycloak) transparently authenticates every cross-namespace call — agents never handle tokens
 3. An **A2A skill** loaded into each agent teaches it how to discover and message remote instances
 
-### Example: Sally's Lynx Talks to Bob's Shadowman
-
-Lynx discovers the local agents and the remote Shadowman on Bob's instance, sends a message via A2A, and relays the response — all with zero-trust authentication handled transparently by the AuthBridge:
-
-![Lynx communicating with Shadowman across namespaces via A2A](images/a2a.png)
-
-Every cross-namespace call is traced end-to-end via OpenTelemetry, with full GenAI semantic conventions (token counts, model, latency):
-
-![OTEL trace of a cross-namespace A2A call in MLflow](images/a2a-trace.png)
-
-### Security Model
-
-- Each instance gets a unique SPIFFE identity: `spiffe://demo.example.com/ns/<namespace>/sa/openclaw-oauth-proxy`
-- Outbound calls: Envoy intercepts, exchanges SPIFFE JWT for Keycloak OAuth token, injects into request
-- Inbound calls: Envoy validates caller's OAuth token before forwarding to A2A bridge
-- Gateway container is fully hardened: read-only FS, all capabilities dropped, no privilege escalation
-
-See [docs/A2A-ARCHITECTURE.md](docs/A2A-ARCHITECTURE.md) for the full architecture, message flow diagrams, pod component breakdown, and cluster prerequisites. See [docs/A2A-SECURITY.md](docs/A2A-SECURITY.md) for the identity vs. content security model, audit trail, and DLP roadmap.
+See [docs/A2A-ARCHITECTURE.md](docs/A2A-ARCHITECTURE.md) for the full architecture and [docs/A2A-SECURITY.md](docs/A2A-SECURITY.md) for the security model.
 
 ## Additional Agents
 
@@ -185,23 +187,39 @@ The init container overwrites config on every pod restart. UI changes live only 
 
 See the `.envsubst` templates in `manifests/openclaw/overlays/` for the full config structure.
 
+### Update Without Re-running setup.sh
+
+If you already have OpenClaw running and just want to apply manifest changes:
+
+```bash
+source .env && set -a
+ENVSUBST_VARS='${CLUSTER_DOMAIN} ${OPENCLAW_GATEWAY_TOKEN} ${OPENCLAW_OAUTH_CLIENT_SECRET} ${OPENCLAW_OAUTH_COOKIE_SECRET}'
+for tpl in manifests/openclaw/overlays/openshift/*.envsubst; do
+  envsubst "$ENVSUBST_VARS" < "$tpl" > "${tpl%.envsubst}"
+done
+
+oc apply -k manifests/openclaw/overlays/openshift/
+```
+
 ## Repository Structure
 
 ```
 openclaw-k8s/
 ├── scripts/
-│   ├── setup.sh                # Deploy OpenClaw + A2A skill
+│   ├── setup.sh                # Deploy OpenClaw (add --with-a2a for A2A)
 │   ├── setup-agents.sh         # Deploy additional agents + skills
 │   ├── setup-nps-agent.sh      # Deploy NPS Agent (separate namespace)
+│   ├── create-cluster.sh       # Create a KinD cluster for local testing
 │   ├── update-jobs.sh          # Update cron jobs (quick iteration)
 │   ├── export-config.sh        # Export live config from running pod
 │   ├── teardown.sh             # Remove everything
-│   └── build-and-push.sh      # Build images with podman (optional)
+│   └── build-and-push.sh       # Build images with podman (optional)
 │
 ├── manifests/
 │   ├── openclaw/
-│   │   ├── base/               # Core: deployment (7 containers), service, PVCs,
-│   │   │                       #   A2A bridge, AuthBridge, custom SCC
+│   │   ├── base/               # Core: deployment, service, PVCs, A2A resources
+│   │   ├── base-k8s/           # K8s-specific patches (strips OpenShift resources)
+│   │   ├── patches/            # Optional patches (strip-a2a.yaml)
 │   │   ├── overlays/
 │   │   │   ├── openshift/      # OpenShift overlay (secrets, config, OAuth, routes)
 │   │   │   └── k8s/            # Vanilla Kubernetes overlay
@@ -210,9 +228,6 @@ openclaw-k8s/
 │   │   └── llm/                # vLLM reference deployment (GPU model server)
 │   │
 │   └── nps-agent/              # NPS Agent deployment (own namespace + identity)
-│       ├── nps-agent-deployment.yaml.envsubst
-│       ├── nps-agent-eval.yaml          # Eval script (6 test cases)
-│       └── nps-agent-eval-job.yaml.envsubst  # Weekly eval CronJob
 │
 ├── observability/              # OTEL sidecar and collector templates
 │
@@ -227,36 +242,33 @@ openclaw-k8s/
 
 ## Security
 
-The gateway container runs with enterprise security hardening:
+The gateway container runs with security hardening:
 
 - Read-only root filesystem, all capabilities dropped, no privilege escalation
-- Custom `openclaw-authbridge` SCC grants only AuthBridge sidecar capabilities (NET_ADMIN, NET_RAW, spc_t)
-- ResourceQuota, PodDisruptionBudget, NetworkPolicy
+- ResourceQuota, PodDisruptionBudget
 - Token-based gateway auth + OAuth proxy (OpenShift)
 - Exec allowlist mode (only `curl` and `jq` permitted)
+
+With `--with-a2a`, additional security features are enabled:
+- Custom `openclaw-authbridge` SCC for AuthBridge sidecar capabilities (OpenShift)
 - SPIFFE workload identity per namespace (cryptographic, auditable)
 
-See [docs/A2A-ARCHITECTURE.md](docs/A2A-ARCHITECTURE.md) for the custom SCC rationale and [docs/OPENSHIFT-SECURITY-FIXES.md](docs/OPENSHIFT-SECURITY-FIXES.md) for the full security posture.
+See [docs/OPENSHIFT-SECURITY-FIXES.md](docs/OPENSHIFT-SECURITY-FIXES.md) for the full security posture. With A2A enabled, see [docs/A2A-ARCHITECTURE.md](docs/A2A-ARCHITECTURE.md) and [docs/A2A-SECURITY.md](docs/A2A-SECURITY.md).
 
 ## Troubleshooting
 
-**Pod not starting (SCC issues):**
-- Grant the custom SCC: `oc adm policy add-scc-to-user openclaw-authbridge -z openclaw-oauth-proxy -n <prefix>-openclaw`
-
-**A2A bridge returning 401:**
-- Check SPIFFE helper has credentials: `oc exec deployment/openclaw -c spiffe-helper -- ls -la /opt/`
-- Check client registration completed: `oc logs deployment/openclaw -c client-registration`
-
-**Cross-namespace call failing:**
-- Verify SPIRE registration entry exists for the target namespace
-- Check Envoy logs: `oc logs deployment/openclaw -c envoy-proxy`
-
 **Agent not appearing in Control UI:**
-- Check config: `oc get configmap openclaw-config -n <prefix>-openclaw -o yaml`
-- Restart gateway: `oc rollout restart deployment/openclaw -n <prefix>-openclaw`
+- Check config: `kubectl get configmap openclaw-config -n <prefix>-openclaw -o yaml`
+- Restart gateway: `kubectl rollout restart deployment/openclaw -n <prefix>-openclaw`
 
 **Setup script fails with "not logged in to OpenShift":**
 - Run `oc login https://api.YOUR-CLUSTER:6443` first
+
+**A2A-specific issues (only with `--with-a2a`):**
+
+- **Pod not starting (SCC issues):** Grant the custom SCC: `oc adm policy add-scc-to-user openclaw-authbridge -z openclaw-oauth-proxy -n <prefix>-openclaw`
+- **A2A bridge returning 401:** Check SPIFFE helper credentials: `oc exec deployment/openclaw -c spiffe-helper -- ls -la /opt/`
+- **Cross-namespace call failing:** Verify SPIRE registration entry exists for the target namespace; check Envoy logs: `oc logs deployment/openclaw -c envoy-proxy`
 
 ## License
 

@@ -263,7 +263,8 @@ else
 
   # Prompt for Anthropic API key (optional — for agents that use Anthropic models)
   log_info "Anthropic API key (optional, for agents using Claude models):"
-  read -p "  API key (leave empty to skip): " ANTHROPIC_API_KEY
+  read -sp "  API key (leave empty to skip): " ANTHROPIC_API_KEY
+  echo
   ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
   if [ -n "$ANTHROPIC_API_KEY" ]; then
     log_success "Anthropic API key set"

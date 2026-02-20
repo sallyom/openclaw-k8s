@@ -2,7 +2,8 @@
 
 ## Overview
 
-OpenClaw is an AI agent runtime platform. This repo deploys it on Kubernetes (OpenShift or vanilla K8s) with per-user namespaces, OpenTelemetry observability, and security hardening.
+OpenClaw is an AI agent runtime platform. This repo deploys it on Kubernetes (OpenShift or vanilla K8s) with per-user namespaces,
+OpenTelemetry observability, and security hardening.
 
 ## Architecture
 
@@ -15,27 +16,27 @@ OpenClaw is an AI agent runtime platform. This repo deploys it on Kubernetes (Op
 ┌─────────────────────────────────────────────────────────────────┐
 │  OpenClaw Pod (Namespace: <prefix>-openclaw)                    │
 │                                                                 │
-│  ┌────────────────────────────────────────────────────────────┐  │
-│  │  Agent Runtime                                             │  │
-│  │  ┌────────────────────┐     ┌────────────────────┐         │  │
-│  │  │  Shadowman/Lynx    │     │  Resource Optimizer │         │  │
-│  │  │  (customizable)    │     │  Schedule: CronJob  │         │  │
-│  │  │  Model: configurable│    │  Model: in-cluster  │         │  │
-│  │  └────────────────────┘     └────────────────────┘         │  │
-│  └────────────────────────────────────────────────────────────┘  │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │  Agent Runtime                                             │ │
+│  │  ┌──────────────────── ┐     ┌────────────────────┐        │ │
+│  │  │  Shadowman/Lynx     │     │  Resource Optimizer│        │ │
+│  │  │  (customizable)     │     │  Schedule: CronJob │        │ │
+│  │  │  Model: configurable│     │  Model: in-cluster │        │ │
+│  │  └──────────────────── ┘     └────────────────────┘        │ │
+│  └────────────────────────────────────────────────────────────┘ │
 │                                                                 │
 │  ┌──────────────┐ ┌────────────┐ ┌────────────────────────────┐ │
 │  │  Gateway     │ │ A2A Bridge │ │  OTEL Collector Sidecar    │ │
 │  │  :18789      │ │ :8080      │ │  (auto-injected)           │ │
 │  └──────────────┘ └────────────┘ └────────────────────────────┘ │
 │                                                                 │
-│  ┌────────────────────────────────────────────────────────────┐  │
-│  │  AuthBridge (transparent zero-trust)                       │  │
-│  │  ┌───────────┐ ┌─────────────────┐ ┌────────────────────┐ │  │
-│  │  │  Envoy    │ │ Client          │ │ SPIFFE Helper      │ │  │
-│  │  │  Proxy    │ │ Registration    │ │ (SPIRE CSI)        │ │  │
-│  │  └───────────┘ └─────────────────┘ └────────────────────┘ │  │
-│  └────────────────────────────────────────────────────────────┘  │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │  AuthBridge (transparent zero-trust)                       │ │
+│  │  ┌───────────┐ ┌─────────────────┐ ┌────────────────────┐  │ │
+│  │  │  Envoy    │ │ Client          │ │ SPIFFE Helper      │  │ │
+│  │  │  Proxy    │ │ Registration    │ │ (SPIRE CSI)        │  │ │
+│  │  └───────────┘ └─────────────────┘ └────────────────────┘  │ │
+│  └────────────────────────────────────────────────────────────┘ │
 │                                                                 │
 │  Sessions stored on PVC                                         │
 │  Config: openclaw.json (ConfigMap → PVC)                        │
@@ -73,7 +74,8 @@ Each agent gets an isolated workspace on the PVC:
 (git-committed)      (setup.sh)  (K8s)       (pod restart)   (runtime)
 ```
 
-The init container overwrites `openclaw.json` on every pod restart. UI changes live only on the PVC and are lost unless exported and merged back into the `.envsubst` template.
+The init container overwrites `openclaw.json` on every pod restart.
+UI changes live only on the PVC and are lost unless exported and merged back into the `.envsubst` template.
 
 ### OpenTelemetry Observability
 - `diagnostics-otel` plugin emits OTLP traces from the gateway
