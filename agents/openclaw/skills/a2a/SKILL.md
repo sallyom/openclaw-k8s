@@ -78,11 +78,18 @@ Extract the response text from `.result.status.message.parts[0].text`.
 
 ## 3. Known OpenClaw Instances
 
-These are the OpenClaw instances available on this cluster:
+Your peer table is maintained in your **MEMORY.md** file. Check it for current peers:
 
-| Owner | Namespace | A2A Endpoint |
-|-------|-----------|-------------|
-| {{OPENCLAW_REGISTRY}} |
+```bash
+cat ~/.openclaw/workspace-*/MEMORY.md
+```
+
+Look for the "Known A2A Peers" section. You can update that table yourself
+when you discover new peers or the user tells you about one. Use the format:
+
+```
+| owner_name | owner-namespace | http://openclaw.owner-namespace.svc.cluster.local:8080 |
+```
 
 To discover instances dynamically, look for services with the `kagenti.io/type: agent` label:
 
@@ -164,7 +171,13 @@ This means:
 | `jsonrpc error -32602` | Invalid message format | Check your JSON structure matches the examples above |
 | `jsonrpc error -32603` | Remote agent error | The remote agent failed to process — try rephrasing |
 
-## 7. Best Practices
+## 7. Session Persistence
+
+A2A conversations maintain history per remote agent. When a remote agent sends you multiple messages, they all go to the same session, so you can reference prior exchanges. The remote agent's SPIFFE identity (or explicit user header) is used to pin the session automatically.
+
+This means you can have multi-turn conversations with remote agents. They will remember what you discussed earlier in the same session.
+
+## 8. Best Practices
 
 - **Discover first**: Always fetch the agent card before sending messages to confirm the instance is up and see available agents
 - **Be concise**: Remote agents may use small models — keep messages clear and specific

@@ -92,7 +92,7 @@ Agents need an LLM. The setup script supports three model backends:
 
 | Option | Provider | `DEFAULT_AGENT_MODEL` |
 |--------|----------|----------------------|
-| Anthropic API key | `anthropic` | `anthropic/claude-sonnet-4-5` |
+| Anthropic API key | `anthropic` | `anthropic/claude-sonnet-4-6` |
 | Google Vertex AI | `google-vertex` | `google-vertex/gemini-2.5-pro` |
 | In-cluster vLLM | `nerc` | `nerc/openai/gpt-oss-20b` |
 
@@ -118,9 +118,12 @@ Kubernetes:
 agents/openclaw/
 ├── README.md                                 # This file
 ├── SECURITY.md                               # Security guide
+├── a2a-bridge/                               # A2A JSON-RPC to OpenAI bridge
+│   ├── a2a-bridge.py                         # Bridge script (ConfigMap-mounted)
+│   └── kustomization.yaml                    # ConfigMap generator
 ├── base/                                     # Shared base resources
 │   ├── kustomization.yaml
-│   ├── openclaw-deployment.yaml              # Gateway + init container
+│   ├── openclaw-deployment.yaml              # Gateway + A2A bridge + init container
 │   ├── openclaw-service.yaml
 │   ├── openclaw-route.yaml                   # OpenShift route
 │   ├── openclaw-config-configmap.yaml        # Default config (base)
@@ -154,11 +157,15 @@ agents/openclaw/
 │   │   ├── resource-optimizer-agent.yaml.envsubst
 │   │   ├── resource-optimizer-rbac.yaml.envsubst
 │   │   └── resource-report-cronjob.yaml.envsubst
+│   ├── mlops-monitor/                        # MLOps monitor agent, RBAC, CronJob
 │   ├── audit-reporter/                       # Compliance monitoring (future)
-│   ├── mlops-monitor/                        # ML operations tracking (future)
 │   ├── agents-config-patch.yaml.envsubst     # Agent list config overlay
 │   ├── demo-workloads/                       # Demo workloads for resource-optimizer
 │   └── remove-custom-agents.sh              # Cleanup script
+├── skills/                                  # Agent skills
+│   ├── a2a/SKILL.md                         # A2A cross-instance communication
+│   ├── nps/SKILL.md                         # NPS Agent query skill
+│   └── kustomization.yaml                   # Skill ConfigMap generator
 ├── llm/                                     # vLLM reference deployment
 │   ├── kustomization.yaml
 │   ├── namespace.yaml                       # openclaw-llms namespace

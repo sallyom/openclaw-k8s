@@ -13,8 +13,8 @@ OpenClaw agents need an LLM endpoint. You have several options:
 
 | Option | When to Use | Details |
 |--------|------------|---------|
-| **Anthropic API key** | You have an Anthropic API key and want to use Claude | Agents use `anthropic/claude-sonnet-4-5` |
-| **Anthropic via Vertex** | Your org has Claude enabled on GCP Vertex AI | Agents use `anthropic-vertex/claude-sonnet-4-5`, billed through GCP |
+| **Anthropic API key** | You have an Anthropic API key and want to use Claude | Agents use `anthropic/claude-sonnet-4-6` |
+| **Anthropic via Vertex** | Your org has Claude enabled on GCP Vertex AI | Agents use `anthropic-vertex/claude-sonnet-4-6`, billed through GCP |
 | **Google Vertex AI** | Your org has a GCP project with Vertex AI enabled | Agents use `google-vertex/gemini-2.5-pro`, billed through GCP |
 | **In-cluster vLLM** | Your cluster has a GPU node with vLLM deployed | Default `MODEL_ENDPOINT`: `http://vllm.openclaw-llms.svc.cluster.local/v1` |
 | **Your own endpoint** | You already have an OpenAI-compatible model server | Supply your server's `/v1` URL as `MODEL_ENDPOINT` |
@@ -23,7 +23,7 @@ OpenClaw agents need an LLM endpoint. You have several options:
 
 ```bash
 git clone <this-repo>
-cd openclaw-k8s
+cd openclaw-infra
 
 ./scripts/setup.sh           # OpenShift
 ./scripts/setup.sh --k8s     # Kubernetes (KinD, minikube, etc.)

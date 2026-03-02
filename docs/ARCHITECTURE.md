@@ -139,7 +139,7 @@ Each agent can use a different model provider:
     "list": [
       {
         "id": "prefix_lynx",
-        "model": { "primary": "anthropic/claude-sonnet-4-5" }
+        "model": { "primary": "anthropic/claude-sonnet-4-6" }
       },
       {
         "id": "prefix_resource_optimizer"

@@ -19,7 +19,7 @@ This architecture demonstrates zero-trust agent communication where:
  │  OpenClaw Pod                      │            │  OpenClaw Pod                      │
  │                                    │            │                                    │
  │  ┌──────────┐    ┌──────────────┐  │            │  ┌──────────────┐    ┌──────────┐  │
- │  │  Lynx    │    │  Agent Card  │  │            │  │  Agent Card  │    │ Shadowman│  │
+ │  │  Lynx    │    │  A2A Bridge  │  │            │  │  A2A Bridge  │    │ Shadowman│  │
  │  │  Agent   │    │  :8080       │  │            │  │  :8080       │    │  Agent   │  │
  │  └────┬─────┘    └──────────────┘  │            │  └──────────────┘    └────┬─────┘  │
  │       │                            │            │                          │        │
@@ -69,8 +69,10 @@ When Lynx (Sally's agent) sends a message to Shadowman (Bob's agent):
    a. Validates OAuth token against Keycloak
    b. Strips auth header, forwards to agent-card (:8080)
 
-5. Agent card server serves /.well-known/agent.json for discovery
-   (A2A message handling is done by the gateway via the A2A skill)
+5. A2A bridge on :8080 receives the request:
+   a. For discovery (GET /.well-known/agent.json): serves the agent card
+   b. For messages (POST / with A2A JSON-RPC): translates to OpenAI
+      /v1/chat/completions against gateway (:18789) with x-openclaw-agent-id header
 
 6. Response travels back through Envoy to Lynx
 ```
@@ -91,13 +93,13 @@ With `--with-a2a` enabled, Kagenti webhook injects AIB sidecars at admission tim
 | Container | Port | Source | Purpose |
 |-----------|------|--------|---------|
 | `gateway` | 18789 | Deployment manifest | OpenClaw agent runtime |
-| `agent-card` | 8080 | Deployment manifest | Serves `/.well-known/agent.json` for Kagenti operator discovery |
+| `agent-card` | 8080 | Deployment manifest | A2A bridge: serves `/.well-known/agent.json` + translates A2A JSON-RPC to OpenAI chat completions |
 | `oauth-proxy` | 8443 | Deployment manifest (OpenShift only) | OpenShift OAuth for UI access |
 | `spiffe-helper` | - | Webhook-injected | Fetches X.509 + JWT SVIDs from SPIRE |
 | `client-registration` | - | Webhook-injected | Registers OAuth client in Keycloak |
 | `envoy-proxy` | 15123, 15124 | Webhook-injected | Transparent token exchange proxy |
 
-Without `--with-a2a`, the pod has only `init-config`, `gateway`, `agent-card`, and `oauth-proxy` (OpenShift) — no Kagenti sidecars.
+Without `--with-a2a`, the pod has `init-config`, `gateway`, `agent-card` (A2A bridge), and `oauth-proxy` (OpenShift) — no Kagenti sidecars. The A2A bridge still serves `/.well-known/agent.json` and handles A2A JSON-RPC, but without AuthBridge sidecars, cross-namespace calls are unauthenticated.
 
 ## Kagenti Webhook Injection
 
@@ -114,23 +116,37 @@ Instead of manually defining AIB sidecars in the deployment manifest, the Kagent
 - Shared volumes for credential exchange between sidecars
 
 ### What we still manage
-- `agent-card` sidecar (serves `/.well-known/agent.json` — webhook doesn't inject this yet)
+- `agent-card` container (A2A bridge — serves `/.well-known/agent.json` and translates A2A JSON-RPC to gateway API)
 - `oauth-proxy` sidecar (OpenShift-specific, not part of Kagenti)
 - AgentCard CR (tells the Kagenti operator about our agent)
 - Custom SCC (OpenShift — grants capabilities needed by injected sidecars)
 - proxy-init port exclusion patch (port 443 for oauth-proxy K8s API access)
 
-## Agent Card Server
+## A2A Bridge
 
-The `agent-card` sidecar serves `/.well-known/agent.json` for Kagenti operator discovery. It uses a simple Python HTTP server on `ubi9`:
+The `agent-card` container runs an A2A bridge (`a2a-bridge.py`) — a Python stdlib HTTP server on `ubi9` that:
+
+1. **Serves agent cards** — `GET /.well-known/agent.json` for Kagenti operator discovery
+2. **Translates A2A JSON-RPC** — `POST /` with `message/send` or `message/stream` methods are translated to OpenAI `/v1/chat/completions` requests against the local gateway (:18789)
+3. **Streams responses** — `message/stream` returns SSE events with `TaskStatusUpdateEvent` (state: `WORKING`) and `TaskArtifactUpdateEvent` (final response)
 
 ```yaml
 - name: agent-card
   image: registry.redhat.io/ubi9:latest
-  command: ["python3", "-m", "http.server", "8080", "--directory", "/srv"]
+  command: ["python3", "-u", "/scripts/a2a-bridge.py"]
+  env:
+  - name: GATEWAY_TOKEN
+    valueFrom:
+      secretKeyRef:
+        name: openclaw-secrets
+        key: OPENCLAW_GATEWAY_TOKEN
+  - name: GATEWAY_URL
+    value: "http://localhost:18789"
+  - name: AGENT_ID
+    value: ""  # Set by setup.sh; routes to specific agent via x-openclaw-agent-id header
 ```
 
-The agent card content comes from a ConfigMap (`openclaw-agent-card`) mounted at `/srv/.well-known/agent.json`. The AgentCard CR references this service endpoint so the Kagenti operator can discover the agent.
+The bridge script is mounted from the `a2a-bridge` ConfigMap at `/scripts/a2a-bridge.py`. Agent card content comes from the `openclaw-agent-card` ConfigMap at `/srv/.well-known/agent.json`.
 
 Note: Use `ubi9` (not `ubi9-minimal`) — the minimal image does not include `python3`.
 
@@ -258,8 +274,10 @@ oc exec deployment/openclaw -c gateway -- \
 
 | File | Description |
 |------|-------------|
-| `agents/openclaw/base/openclaw-deployment.yaml` | Pod spec (gateway, agent-card, init-config) |
+| `agents/openclaw/base/openclaw-deployment.yaml` | Pod spec (gateway, agent-card/a2a-bridge, init-config) |
 | `agents/openclaw/base/openclaw-agent-card-configmap.yaml` | Agent card ConfigMap (/.well-known/agent.json) |
+| `agents/openclaw/a2a-bridge/a2a-bridge.py` | A2A-to-OpenAI bridge script |
+| `agents/openclaw/a2a-bridge/kustomization.yaml` | Bridge ConfigMap generator |
 | `platform/auth-identity-bridge/openclaw-scc.yaml` | Custom SCC for AIB sidecars |
 | `platform/auth-identity-bridge/openclaw-agentcard.yaml.envsubst` | AgentCard CR for Kagenti operator |
 | `agents/openclaw/skills/a2a/SKILL.md` | A2A skill for agents |
@@ -270,8 +288,7 @@ oc exec deployment/openclaw -c gateway -- \
 
 ## Limitations
 
-- **No streaming**: A2A `message/stream` is handled as non-streaming (full response returned at once)
 - **Single-turn**: Each `message/send` creates a new session — no multi-turn conversation context across calls
-- **Agent card sidecar**: Kagenti webhook does not yet inject an agent-card server. We add one manually using `ubi9` + `python3 -m http.server`. Upstream issue needed.
+- **A2A bridge container**: Kagenti webhook does not inject an A2A bridge. We add one manually using `ubi9` + `a2a-bridge.py` (ConfigMap-mounted script). Upstream issue needed for webhook-injected agent-card/bridge support.
 - **proxy-init port exclusion**: Webhook hardcodes `OUTBOUND_PORTS_EXCLUDE="8080"`. On OpenShift, `setup.sh` patches to add port 443. Upstream issue needed for annotation-based configuration.
 - **K8s mode**: When deployed with `--k8s` without `--with-a2a`, no AIB sidecars are present. Cross-namespace calls work but are unauthenticated.

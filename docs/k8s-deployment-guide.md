@@ -323,7 +323,7 @@ Each agent can use a different model provider and API key.
     },
     "list": [
       {
-        "model": {"primary": "anthropic/claude-sonnet-4-5"}
+        "model": {"primary": "anthropic/claude-sonnet-4-6"}
       },
       {
         "id": "resource_optimizer"

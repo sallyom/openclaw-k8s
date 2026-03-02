@@ -141,7 +141,7 @@ Key design choices:
 - **SELinux enforcing** — `:Z` volume labeling, non-root container (uid 1000)
 - **Persistent volume** — config, workspace, session history survive restarts
 
-See [`edge/README.md`](../edge/README.md) for Quadlet files, config templates,
+See [`agents/openclaw/edge/README.md`](../agents/openclaw/edge/README.md) for Quadlet files, config templates,
 and the interactive setup script.
 
 ### Models

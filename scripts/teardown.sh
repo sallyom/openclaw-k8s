@@ -7,6 +7,7 @@
 # Usage:
 #   ./teardown.sh                    # Teardown OpenShift (default)
 #   ./teardown.sh --k8s              # Teardown vanilla Kubernetes
+#   ./teardown.sh --env-file path    # Use a specific .env file (default: .env)
 #   ./teardown.sh --delete-env       # Also delete .env file
 #
 # This script:
@@ -30,12 +31,16 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Parse flags
 K8S_MODE=false
 DELETE_ENV=false
-for arg in "$@"; do
-  case "$arg" in
-    --k8s) K8S_MODE=true ;;
-    --delete-env) DELETE_ENV=true ;;
+ENV_FILE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --k8s) K8S_MODE=true; shift ;;
+    --delete-env) DELETE_ENV=true; shift ;;
+    --env-file) ENV_FILE="$2"; shift 2 ;;
+    *) shift ;;
   esac
 done
+ENV_FILE="${ENV_FILE:-$REPO_ROOT/.env}"
 
 if $K8S_MODE; then
   KUBECTL="kubectl"
@@ -62,10 +67,10 @@ echo "╚═══════════════════════�
 echo ""
 
 # Load .env if available
-if [ -f "$REPO_ROOT/.env" ]; then
+if [ -f "$ENV_FILE" ]; then
   set -a
   # shellcheck disable=SC1091
-  source "$REPO_ROOT/.env"
+  source "$ENV_FILE"
   set +a
 fi
 
@@ -226,19 +231,19 @@ fi
 teardown_namespace "$OPENCLAW_NAMESPACE"
 
 # Optionally delete .env
-if $DELETE_ENV && [ -f "$REPO_ROOT/.env" ]; then
-  rm "$REPO_ROOT/.env"
-  log_success "Deleted .env"
+if $DELETE_ENV && [ -f "$ENV_FILE" ]; then
+  rm "$ENV_FILE"
+  log_success "Deleted $ENV_FILE"
   echo ""
-elif [ -f "$REPO_ROOT/.env" ]; then
-  log_info ".env kept (use --delete-env to remove)"
+elif [ -f "$ENV_FILE" ]; then
+  log_info "$ENV_FILE kept (use --delete-env to remove)"
   echo ""
 fi
 
 # Clean up generated YAML files (from envsubst)
 log_info "Cleaning up generated YAML files..."
 generated=0
-for tpl in $(find "$REPO_ROOT/manifests" "$REPO_ROOT/observability" -name '*.envsubst' 2>/dev/null); do
+for tpl in $(find "$REPO_ROOT/agents" "$REPO_ROOT/platform" "$REPO_ROOT/manifests" -name '*.envsubst' 2>/dev/null); do
   yaml="${tpl%.envsubst}"
   if [ -f "$yaml" ]; then
     rm "$yaml"

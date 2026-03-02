@@ -17,7 +17,7 @@ After Kagenti is running, deploy agents (e.g. OpenClaw) with `kagenti.io/inject:
 - OpenShift 4.19+ (4.16+ works with Helm-based SPIRE fallback)
 - `oc` or `kubectl` with **cluster-admin**
 - `helm` >= 3.18.0
-- Clone of [kagenti/kagenti](https://github.com/kagenti/kagenti) (for local chart install)
+- Clone of kagenti repo — use [sallyom/kagenti](https://github.com/sallyom/kagenti) **branch `charts-updated-webhook`** until port exclusion annotation support is merged upstream. This branch overrides the webhook image with `quay.io/sallyom/kagenti-webhook:latest`, which adds `kagenti.io/outbound-ports-exclude` and `kagenti.io/inbound-ports-exclude` pod annotation support.
 
 ## Quick Start (Automated)
 
@@ -66,7 +66,7 @@ echo "Trust domain: $DOMAIN"
 
 ### Step 3: Install kagenti-deps (SPIRE + cert-manager)
 
-#### From local repo (recommended until clusterName fix is released)
+#### From local repo (recommended — use sallyom/kagenti branch charts-updated-webhook)
 
 ```bash
 cd <path-to-kagenti-repo>
@@ -231,6 +231,25 @@ The webhook injects a `proxy-init` init container that runs as `privileged: true
 
 The AgentCard CRD accepts both `spec.selector.matchLabels` and `spec.targetRef`. The `selector` field is marked as deprecated — use `targetRef` when your CRD version supports it. Both work as of v0.5.0-alpha.
 
+### `environments` ConfigMap field ownership conflict on `helm upgrade`
+
+When Kagenti is first installed, the `agent-oauth-secret-job` (a K8s Job) writes `KEYCLOAK_ADMIN_USERNAME` and `KEYCLOAK_ADMIN_PASSWORD` to the `environments` ConfigMap in each agent namespace using the `OpenAPI-Generator` field manager. On subsequent `helm upgrade` commands, Helm's server-side apply fails because it doesn't own those fields:
+
+```
+Apply failed with 2 conflicts: conflicts with "OpenAPI-Generator" using v1:
+- .data.KEYCLOAK_ADMIN_PASSWORD
+- .data.KEYCLOAK_ADMIN_USERNAME
+```
+
+**Fix:** Delete the `environments` ConfigMaps before running `helm upgrade`:
+
+```bash
+for ns in bob-openclaw nps-agent; do
+  kubectl delete configmap environments -n "$ns" 2>/dev/null || true
+done
+helm upgrade kagenti ...
+```
+
 ### Agent namespaces must be registered with Kagenti
 
 The webhook injects sidecars that mount 4 ConfigMaps (`envoy-config`, `spiffe-helper-config`, `authbridge-config`, `environments`). These are only created in namespaces listed in `agentNamespaces` during `helm install/upgrade`. Pods in unregistered namespaces will fail with `CreateContainerConfigError` (configmap not found). There is currently no dynamic namespace registration — this must be done via `helm upgrade` with an updated list.
@@ -241,31 +260,15 @@ The webhook injects sidecars that mount 4 ConfigMaps (`envoy-config`, `spiffe-he
 
 The Kagenti operator's AgentCard controller fetches `/.well-known/agent.json` from the agent's service to populate the agent card in the UI. If the agent framework doesn't natively serve this A2A endpoint, the AgentCard will show `FetchFailed` status and the agent won't appear in the Kagenti UI.
 
-**Current state:** OpenClaw does not serve `/.well-known/agent.json`. Kagenti's webhook-injected sidecars (proxy-init, spiffe-helper, client-registration, envoy-proxy) handle identity and traffic interception but do NOT serve the agent card.
-
-**Workaround:** Add a lightweight agent-card sidecar to the deployment:
+**Current state:** OpenClaw's deployment includes an A2A bridge container (`agent-card`) that serves `/.well-known/agent.json` and also translates A2A JSON-RPC (`message/send`, `message/stream`) to OpenAI `/v1/chat/completions` requests against the local gateway. The bridge runs `a2a-bridge.py` — a Python stdlib HTTP server mounted from a ConfigMap.
 
 ```yaml
-# Agent card server — serves /.well-known/agent.json for Kagenti operator discovery
 - name: agent-card
   image: registry.redhat.io/ubi9:latest
-  command: ["python3", "-m", "http.server", "8080", "--directory", "/srv"]
-  ports:
-  - name: a2a
-    containerPort: 8080
-  volumeMounts:
-  - name: agent-card-data
-    mountPath: /srv/.well-known
-  resources:
-    requests:
-      memory: 32Mi
-      cpu: 10m
-    limits:
-      memory: 64Mi
-      cpu: 50m
+  command: ["python3", "-u", "/scripts/a2a-bridge.py"]
 ```
 
-With a ConfigMap providing the `agent.json` content mounted at `/srv/.well-known/agent.json`. The service port `a2a` (8080) already targets this containerPort name.
+The agent card content comes from the `openclaw-agent-card` ConfigMap at `/srv/.well-known/agent.json`. The bridge script comes from the `a2a-bridge` ConfigMap at `/scripts/a2a-bridge.py`. See [A2A-ARCHITECTURE.md](A2A-ARCHITECTURE.md#a2a-bridge) for details.
 
 Note: Use `ubi9` (not `ubi9-minimal`) — the minimal image does not include `python3`.
 

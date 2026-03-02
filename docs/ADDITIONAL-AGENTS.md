@@ -164,7 +164,7 @@ Each agent can use a different model provider. The model is set in the config ov
     "list": [
       {
         "id": "prefix_lynx",
-        "model": { "primary": "anthropic/claude-sonnet-4-5" }
+        "model": { "primary": "anthropic/claude-sonnet-4-6" }
       },
       {
         "id": "prefix_resource_optimizer"
@@ -177,7 +177,7 @@ Each agent can use a different model provider. The model is set in the config ov
 Resolution order: agent-specific `model` > `agents.defaults.model.primary` > built-in default.
 
 Model priority during setup (auto-detected):
-1. Anthropic API key provided → `anthropic/claude-sonnet-4-5`
+1. Anthropic API key provided → `anthropic/claude-sonnet-4-6`
 2. Google Vertex enabled → `google-vertex/gemini-2.5-pro`
 3. Neither → `nerc/openai/gpt-oss-20b` (in-cluster vLLM)
 

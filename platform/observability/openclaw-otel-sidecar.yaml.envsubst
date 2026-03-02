@@ -92,14 +92,13 @@ spec:
 
     exporters:
       # Export to MLflow OTLP endpoint (path /v1/traces is auto-appended)
-      # Uses in-cluster service URL to avoid DNS rebinding rejection on the external route
       otlphttp:
-        endpoint: http://mlflow-service.mlflow.svc.cluster.local:5000
+        endpoint: ${MLFLOW_TRACKING_URI}
         headers:
-          x-mlflow-experiment-id: "4"
+          x-mlflow-experiment-id: "${MLFLOW_EXPERIMENT_ID}"
           x-mlflow-workspace: "openclaw"
         tls:
-          insecure: true
+          insecure: ${MLFLOW_TLS_INSECURE}
 
       # Debug exporter for troubleshooting
       debug:

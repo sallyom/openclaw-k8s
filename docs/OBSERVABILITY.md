@@ -96,7 +96,7 @@ The observability stack uses **sidecar-based OTEL collectors** that send traces 
 
 **Auto-injected** by OpenTelemetry Operator based on pod annotation.
 
-**Configuration** (`observability/openclaw-otel-sidecar.yaml.envsubst`):
+**Configuration** (`platform/observability/openclaw-otel-sidecar.yaml.envsubst`):
 
 ```yaml
 apiVersion: opentelemetry.io/v1alpha1
@@ -278,8 +278,8 @@ The setup script automatically runs `envsubst` on sidecar templates and deploys 
 ```bash
 ./scripts/setup.sh
 # Generates from .envsubst templates:
-# - observability/openclaw-otel-sidecar.yaml
-# - observability/vllm-otel-sidecar.yaml
+# - platform/observability/openclaw-otel-sidecar.yaml
+# - platform/observability/vllm-otel-sidecar.yaml
 ```
 
 #### Option 2: Manual Deployment
@@ -292,13 +292,13 @@ source .env && set -a
 
 # Generate YAML from templates
 ENVSUBST_VARS='${CLUSTER_DOMAIN} ${OPENCLAW_NAMESPACE}'
-for tpl in observability/*.envsubst; do
+for tpl in platform/observability/*.envsubst; do
   envsubst "$ENVSUBST_VARS" < "$tpl" > "${tpl%.envsubst}"
 done
 
 # Deploy each sidecar configuration
-oc apply -f observability/openclaw-otel-sidecar.yaml
-oc apply -f observability/vllm-otel-sidecar.yaml
+oc apply -f platform/observability/openclaw-otel-sidecar.yaml
+oc apply -f platform/observability/vllm-otel-sidecar.yaml
 ```
 
 #### Verify Sidecar Configurations
@@ -381,7 +381,7 @@ oc logs -n openclaw -l app=openclaw -c otc-container
 
 ### Update Cluster-Specific Values
 
-**Important:** The `observability/` directory contains `.envsubst` templates with `${OPENCLAW_NAMESPACE}` and `${CLUSTER_DOMAIN}` placeholders. The OpenClaw sidecar uses the in-cluster MLflow service URL (no cluster domain needed), but the vLLM sidecar still references `${CLUSTER_DOMAIN}` for the external route.
+**Important:** The `platform/observability/` directory contains `.envsubst` templates with `${OPENCLAW_NAMESPACE}` and `${CLUSTER_DOMAIN}` placeholders. The OpenClaw sidecar uses the in-cluster MLflow service URL (no cluster domain needed), but the vLLM sidecar still references `${CLUSTER_DOMAIN}` for the external route.
 
 **Automated (recommended):**
 ```bash
@@ -395,13 +395,13 @@ oc logs -n openclaw -l app=openclaw -c otc-container
 source .env
 
 # Generate YAML from templates
-for tpl in observability/*.envsubst; do
+for tpl in platform/observability/*.envsubst; do
   envsubst '${CLUSTER_DOMAIN} ${OPENCLAW_NAMESPACE}' < "$tpl" > "${tpl%.envsubst}"
 done
 
 # Then deploy
-oc apply -f observability/openclaw-otel-sidecar.yaml
-oc apply -f observability/vllm-otel-sidecar.yaml
+oc apply -f platform/observability/openclaw-otel-sidecar.yaml
+oc apply -f platform/observability/vllm-otel-sidecar.yaml
 ```
 
 ### Verify Traces in MLflow

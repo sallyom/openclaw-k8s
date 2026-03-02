@@ -8,14 +8,14 @@
 # Usage:
 #   ./scripts/setup-kagenti.sh                              # Interactive
 #   ./scripts/setup-kagenti.sh --kagenti-repo /path/to/kagenti
-#   ./scripts/setup-kagenti.sh --agent-namespaces "ns1,ns2"
 #   ./scripts/setup-kagenti.sh --skip-ovn-patch             # Skip OVN gateway patch
 #   ./scripts/setup-kagenti.sh --skip-mcp-gateway           # Skip MCP Gateway install
 #
 # Prerequisites:
 #   - oc / kubectl with cluster-admin
 #   - helm >= 3.18.0 (Helm 4 also works)
-#   - Local clone of kagenti repo
+#   - Local clone of kagenti repo (use sallyom/kagenti branch charts-updated-webhook
+#     until port exclusion annotations are merged upstream)
 #
 # Tested on: OCP 4.19+ (ROSA)
 # ============================================================================
@@ -27,7 +27,6 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Defaults
 KAGENTI_REPO="${KAGENTI_REPO:-}"
-AGENT_NAMESPACES="${AGENT_NAMESPACES:-}"
 SKIP_OVN_PATCH=false
 SKIP_MCP_GATEWAY=false
 MCP_GATEWAY_VERSION="0.4.0"
@@ -49,7 +48,6 @@ log_error()   { echo -e "${RED}✗${NC} $1"; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --kagenti-repo)       KAGENTI_REPO="$2"; shift 2 ;;
-    --agent-namespaces)   AGENT_NAMESPACES="$2"; shift 2 ;;
     --skip-ovn-patch)     SKIP_OVN_PATCH=true; shift ;;
     --skip-mcp-gateway)   SKIP_MCP_GATEWAY=true; shift ;;
     --mcp-gateway-version) MCP_GATEWAY_VERSION="$2"; shift 2 ;;
@@ -59,7 +57,6 @@ while [[ $# -gt 0 ]]; do
       echo ""
       echo "Options:"
       echo "  --kagenti-repo PATH       Path to local kagenti repo clone"
-      echo "  --agent-namespaces NS     Comma-separated namespaces for agent injection"
       echo "  --skip-ovn-patch          Skip OVN gateway routing patch"
       echo "  --skip-mcp-gateway        Skip MCP Gateway installation"
       echo "  --mcp-gateway-version VER MCP Gateway chart version (default: $MCP_GATEWAY_VERSION)"
@@ -226,20 +223,6 @@ if [ ! -f "$SECRETS_FILE" ]; then
   fi
 fi
 
-# Agent namespaces
-if [ -z "$AGENT_NAMESPACES" ]; then
-  log_info "Agent namespaces — the webhook will inject sidecars into pods in these namespaces."
-  log_info "  Include any namespace where you'll deploy agents (e.g. sallyom-openclaw,nps-agent)"
-  read -p "  Namespaces (comma-separated): " AGENT_NAMESPACES
-fi
-if [ -z "$AGENT_NAMESPACES" ]; then
-  log_error "At least one agent namespace is required"
-  exit 1
-fi
-
-# Convert comma-separated to helm array: {ns1,ns2}
-AGENT_NS_HELM="{${AGENT_NAMESPACES}}"
-
 # Get latest tag
 log_info "Detecting latest kagenti release tag..."
 LATEST_TAG=$(git ls-remote --tags --sort="v:refname" https://github.com/kagenti/kagenti.git | tail -n1 | sed 's|.*refs/tags/v||; s/\^{}//')
@@ -268,38 +251,12 @@ run_cmd helm upgrade --install kagenti "$KAGENTI_REPO/charts/kagenti/" \
   -f "$SECRETS_FILE" \
   --set ui.frontend.tag="v${LATEST_TAG}" \
   --set ui.backend.tag="v${LATEST_TAG}" \
-  --set "agentNamespaces=${AGENT_NS_HELM}" \
   --set "agentOAuthSecret.spiffePrefix=spiffe://${DOMAIN}/sa" \
   --set uiOAuthSecret.useServiceAccountCA=false \
   --set agentOAuthSecret.useServiceAccountCA=false \
   --set "keycloak.publicUrl=${KEYCLOAK_PUBLIC_URL}"
 
 log_success "Kagenti installed"
-echo ""
-
-# ============================================================================
-# Step 5b: Override webhook image for port exclusion annotation support
-# ============================================================================
-# The upstream webhook hardcodes OUTBOUND_PORTS_EXCLUDE="8080" with no inbound exclusions.
-# Our fork (github.com:sallyom/kagenti-extensions branch update-for-ports) adds support for
-# kagenti.io/outbound-ports-exclude and kagenti.io/inbound-ports-exclude pod annotations.
-# Until this is merged upstream, override the webhook image:
-log_info "Step 5b: Override webhook image for port exclusion annotations"
-WEBHOOK_IMAGE="quay.io/sallyom/kagenti-webhook:latest"
-# The Kagenti agent-oauth-secret-job writes KEYCLOAK_ADMIN_* fields to the environments
-# ConfigMaps using the "OpenAPI-Generator" field manager, which conflicts with Helm's
-# server-side apply on subsequent upgrades. Delete the ConfigMaps to let Helm recreate them.
-IFS=',' read -ra NS_ARRAY <<< "${AGENT_NAMESPACES}"
-for ns in "${NS_ARRAY[@]}"; do
-  $KUBECTL delete configmap environments -n "$ns" 2>/dev/null || true
-done
-run_cmd helm upgrade kagenti "$KAGENTI_REPO/charts/kagenti/" \
-  --reuse-values \
-  --set kagenti-webhook-chart.image.repository=quay.io/sallyom/kagenti-webhook \
-  --set kagenti-webhook-chart.image.tag=latest \
-  -n kagenti-system
-log_success "Webhook image overridden: $WEBHOOK_IMAGE"
-log_info "  Source: github.com:sallyom/kagenti-extensions (branch: update-for-ports)"
 echo ""
 
 # ============================================================================
@@ -326,15 +283,20 @@ if [ -n "$UI_HOST" ]; then
   log_success "Kagenti UI: https://$UI_HOST"
 fi
 
-# Keycloak credentials
+# Keycloak admin credentials (master realm — for admin console only)
 KC_SECRET=$($KUBECTL get secret keycloak-initial-admin -n keycloak -o go-template='Username: {{.data.username | base64decode}}  Password: {{.data.password | base64decode}}' 2>/dev/null || echo "")
 if [ -n "$KC_SECRET" ]; then
-  log_success "Keycloak credentials: $KC_SECRET"
+  log_success "Keycloak admin (master realm): $KC_SECRET"
 fi
 
 echo ""
 echo "============================================"
 echo "  Kagenti platform is ready!"
+echo ""
+echo "  Namespace registration:"
+echo "    Namespaces self-register for webhook injection via label:"
+echo "      kubectl label namespace <ns> kagenti-enabled=true"
+echo "    setup.sh --with-a2a does this automatically."
 echo ""
 echo "  Next: deploy OpenClaw with A2A:"
 echo "    cd $REPO_ROOT"

@@ -10,7 +10,7 @@ Deploy [OpenClaw](https://github.com/openclaw) on Kubernetes, OpenShift, and sta
 |--------|-------|------|
 | **OpenShift** | `./scripts/setup.sh` | This README |
 | **Vanilla Kubernetes** | `./scripts/setup.sh --k8s` | This README |
-| **Standalone Linux** (Fedora/RHEL) | `./edge/scripts/setup-edge.sh` | [edge/README.md](edge/README.md) |
+| **Standalone Linux** (Fedora/RHEL) | `agents/openclaw/edge/scripts/setup-edge.sh` | [edge/README.md](agents/openclaw/edge/README.md) |
 
 ## Kubernetes / OpenShift
 
@@ -116,16 +116,15 @@ See [docs/A2A-ARCHITECTURE.md](docs/A2A-ARCHITECTURE.md) and [docs/A2A-SECURITY.
 Deploy OpenClaw as a podman Quadlet on Fedora/RHEL machines, managed by systemd with SELinux enforcing. Designed for the [fleet management](docs/FLEET.md) model where a central OpenShift gateway supervises edge agents.
 
 ```bash
-cd edge/
+cd agents/openclaw/edge/
 ./scripts/setup-edge.sh
 ```
 
 Installs:
 - **OpenClaw agent** — same container image as K8s, running as a systemd Quadlet
 - **OTEL collector** (optional) — forwards traces to central MLflow on OpenShift
-- **Local LLM** — via [RHEL Lightspeed](https://www.redhat.com/en/blog/use-rhel-command-line-assistant-offline-new-developer-preview) (Phi-4-mini, CPU, no GPU required)
 
-See [edge/README.md](edge/README.md) for setup and [docs/FLEET.md](docs/FLEET.md) for the full architecture.
+See [agents/openclaw/edge/README.md](agents/openclaw/edge/README.md) for setup and [docs/FLEET.md](docs/FLEET.md) for the full architecture.
 
 ## Configuration Management
 
@@ -158,6 +157,7 @@ openclaw-infra/
 ├── agents/
 │   ├── openclaw/               # OpenClaw reference implementation
 │   │   ├── base/               # Deployment, Service, ConfigMap, Secrets, Route
+│   │   ├── a2a-bridge/         # A2A JSON-RPC to OpenAI bridge (ConfigMap-mounted script)
 │   │   ├── overlays/
 │   │   │   ├── openshift/      # Config, secrets, deployment patches (oauth-proxy)
 │   │   │   └── k8s/            # Config, secrets, deployment patches (fsGroup)
@@ -195,15 +195,6 @@ See [docs/OPENSHIFT-SECURITY-FIXES.md](docs/OPENSHIFT-SECURITY-FIXES.md) for the
 ./scripts/teardown.sh --k8s             # Kubernetes
 ./scripts/teardown.sh --delete-env      # Also delete .env file
 ```
-
-## Troubleshooting
-
-| Symptom | Fix |
-|---------|-----|
-| Agent not in Control UI | Check ConfigMap, restart gateway |
-| Config lost after restart | Export with `export-config.sh` first |
-| OAuthClient 500 | Delete and recreate OAuthClient |
-| EACCES on PVC | Delete PVC, redeploy (K8s patch sets fsGroup: 1000) |
 
 ## License
 

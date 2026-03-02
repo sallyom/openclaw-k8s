@@ -13,6 +13,7 @@ Stdlib only -- runs on ubi9:latest with no pip packages.
 
 import json
 import os
+import re
 import uuid
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.request import Request, urlopen
@@ -34,7 +35,31 @@ def read_agent_card(filename):
         return None
 
 
-def call_gateway(messages, stream=False):
+def extract_sender_id(http_headers):
+    """Derive a stable sender identity from inbound request headers.
+
+    Priority:
+    1. SPIFFE ID from x-forwarded-client-cert (Kagenti envoy mTLS)
+    2. Explicit x-openclaw-user header from caller
+    3. None (gateway will create an ephemeral session)
+    """
+    # Kagenti envoy adds XFCC with the remote agent's SPIFFE ID
+    xfcc = http_headers.get("x-forwarded-client-cert", "")
+    if xfcc:
+        # XFCC format: URI=spiffe://domain/sa/agent-name;...
+        match = re.search(r"URI=spiffe://[^/]+/sa/([^;,\s]+)", xfcc)
+        if match:
+            return f"a2a:{match.group(1)}"
+
+    # Caller-provided identity
+    user = http_headers.get("x-openclaw-user", "")
+    if user:
+        return user
+
+    return None
+
+
+def call_gateway(messages, stream=False, sender_id=None):
     """POST to the OpenClaw gateway's OpenAI-compatible endpoint."""
     body = json.dumps({
         "messages": messages,
@@ -46,6 +71,8 @@ def call_gateway(messages, stream=False):
     }
     if AGENT_ID:
         headers["x-openclaw-agent-id"] = AGENT_ID
+    if sender_id:
+        headers["x-openclaw-user"] = sender_id
     req = Request(
         f"{GATEWAY_URL}/v1/chat/completions",
         data=body,
@@ -142,18 +169,23 @@ class A2ABridgeHandler(BaseHTTPRequestHandler):
             self._send_json(200, a2a_error(rpc_id, -32602, "No text in message parts"))
             return
 
+        # Extract sender identity for session pinning
+        sender_id = extract_sender_id(self.headers)
+        if sender_id:
+            self.log_message("Session pinned to sender: %s", sender_id)
+
         messages = [{"role": "user", "content": user_text}]
 
         if method == "message/send":
-            self._handle_send(rpc_id, messages)
+            self._handle_send(rpc_id, messages, sender_id)
         elif method == "message/stream":
-            self._handle_stream(rpc_id, messages)
+            self._handle_stream(rpc_id, messages, sender_id)
         else:
             self._send_json(200, a2a_error(rpc_id, -32601, f"Unknown method: {method}"))
 
-    def _handle_send(self, rpc_id, messages):
+    def _handle_send(self, rpc_id, messages, sender_id=None):
         try:
-            resp = call_gateway(messages, stream=False)
+            resp = call_gateway(messages, stream=False, sender_id=sender_id)
             data = json.loads(resp.read())
             text = data["choices"][0]["message"]["content"]
             self._send_json(200, a2a_result(rpc_id, text))
@@ -165,10 +197,10 @@ class A2ABridgeHandler(BaseHTTPRequestHandler):
         except (KeyError, IndexError) as e:
             self._send_json(200, a2a_error(rpc_id, -32000, f"Bad gateway response: {e}"))
 
-    def _handle_stream(self, rpc_id, messages):
+    def _handle_stream(self, rpc_id, messages, sender_id=None):
         task_id = str(uuid.uuid4())
         try:
-            resp = call_gateway(messages, stream=True)
+            resp = call_gateway(messages, stream=True, sender_id=sender_id)
         except (HTTPError, URLError) as e:
             msg = str(e)
             if hasattr(e, "read"):

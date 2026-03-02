@@ -53,6 +53,7 @@ agents/openclaw/overlays/k8s/config-patch.yaml
 # Agent configs
 agents/openclaw/agents/agents-config-patch.yaml
 agents/openclaw/agents/shadowman/shadowman-agent.yaml
+agents/openclaw/agents/shadowman/shadowman-base.yaml
 agents/openclaw/agents/resource-optimizer/resource-optimizer-agent.yaml
 agents/openclaw/agents/resource-optimizer/resource-optimizer-rbac.yaml
 agents/openclaw/agents/resource-optimizer/resource-report-cronjob.yaml

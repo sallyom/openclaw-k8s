@@ -6,8 +6,9 @@
 # Uses the existing .env — does NOT regenerate secrets.
 #
 # Usage:
-#   ./setup-agents.sh           # OpenShift (default)
-#   ./setup-agents.sh --k8s     # Vanilla Kubernetes
+#   ./setup-agents.sh                          # OpenShift (default)
+#   ./setup-agents.sh --k8s                    # Vanilla Kubernetes
+#   ./setup-agents.sh --env-file path/to/.env  # Use a specific .env file
 #
 # Prerequisites:
 #   - setup.sh has been run at least once (so .env and namespace exist)
@@ -29,11 +30,15 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Parse flags
 K8S_MODE=false
-for arg in "$@"; do
-  case "$arg" in
-    --k8s) K8S_MODE=true ;;
+ENV_FILE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --k8s) K8S_MODE=true; shift ;;
+    --env-file) ENV_FILE="$2"; shift 2 ;;
+    *) shift ;;
   esac
 done
+ENV_FILE="${ENV_FILE:-$REPO_ROOT/.env}"
 
 if $K8S_MODE; then
   KUBECTL="kubectl"
@@ -60,14 +65,14 @@ echo "╚═══════════════════════�
 echo ""
 
 # Load .env
-if [ ! -f "$REPO_ROOT/.env" ]; then
+if [ ! -f "$ENV_FILE" ]; then
   log_error "No .env file found. Run setup.sh first."
   exit 1
 fi
 
 set -a
 # shellcheck disable=SC1091
-source "$REPO_ROOT/.env"
+source "$ENV_FILE"
 set +a
 
 # Source .env.a2a for cluster-level A2A config (Keycloak, SPIRE settings)
@@ -98,15 +103,15 @@ else
     SHADOWMAN_CUSTOM_NAME=$(echo "$CUSTOM_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '_' | tr -cd 'a-z0-9_')
     log_success "Agent will be named '${SHADOWMAN_DISPLAY_NAME}' (id: ${OPENCLAW_PREFIX}_${SHADOWMAN_CUSTOM_NAME})"
     # Save to .env for future runs
-    if ! grep -q '^SHADOWMAN_CUSTOM_NAME=' "$REPO_ROOT/.env" 2>/dev/null; then
-      echo "" >> "$REPO_ROOT/.env"
-      echo "# Custom default agent name (set by setup-agents.sh)" >> "$REPO_ROOT/.env"
-      echo "SHADOWMAN_CUSTOM_NAME=${SHADOWMAN_CUSTOM_NAME}" >> "$REPO_ROOT/.env"
-      echo "SHADOWMAN_DISPLAY_NAME=${SHADOWMAN_DISPLAY_NAME}" >> "$REPO_ROOT/.env"
+    if ! grep -q '^SHADOWMAN_CUSTOM_NAME=' "$ENV_FILE" 2>/dev/null; then
+      echo "" >> "$ENV_FILE"
+      echo "# Custom default agent name (set by setup-agents.sh)" >> "$ENV_FILE"
+      echo "SHADOWMAN_CUSTOM_NAME=${SHADOWMAN_CUSTOM_NAME}" >> "$ENV_FILE"
+      echo "SHADOWMAN_DISPLAY_NAME=${SHADOWMAN_DISPLAY_NAME}" >> "$ENV_FILE"
     else
-      sed -i.bak "s/^SHADOWMAN_CUSTOM_NAME=.*/SHADOWMAN_CUSTOM_NAME=${SHADOWMAN_CUSTOM_NAME}/" "$REPO_ROOT/.env"
-      sed -i.bak "s/^SHADOWMAN_DISPLAY_NAME=.*/SHADOWMAN_DISPLAY_NAME=${SHADOWMAN_DISPLAY_NAME}/" "$REPO_ROOT/.env"
-      rm -f "$REPO_ROOT/.env.bak"
+      sed -i.bak "s/^SHADOWMAN_CUSTOM_NAME=.*/SHADOWMAN_CUSTOM_NAME=${SHADOWMAN_CUSTOM_NAME}/" "$ENV_FILE"
+      sed -i.bak "s/^SHADOWMAN_DISPLAY_NAME=.*/SHADOWMAN_DISPLAY_NAME=${SHADOWMAN_DISPLAY_NAME}/" "$ENV_FILE"
+      rm -f "${ENV_FILE}.bak"
     fi
   else
     SHADOWMAN_CUSTOM_NAME="shadowman"
@@ -145,6 +150,15 @@ export VERTEX_ENABLED="${VERTEX_ENABLED:-false}"
 export GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT:-}"
 export GOOGLE_CLOUD_LOCATION="${GOOGLE_CLOUD_LOCATION:-}"
 
+# MLflow defaults (for existing .env files that don't have these yet)
+export MLFLOW_TRACKING_URI="${MLFLOW_TRACKING_URI:-http://mlflow-service.mlflow.svc.cluster.local:5000}"
+export MLFLOW_EXPERIMENT_ID="${MLFLOW_EXPERIMENT_ID:-0}"
+if [[ "$MLFLOW_TRACKING_URI" =~ ^https:// ]]; then
+  export MLFLOW_TLS_INSECURE="false"
+else
+  export MLFLOW_TLS_INSECURE="true"
+fi
+
 # Agent model priority: Anthropic API > Vertex (anthropic or google) > in-cluster
 # VERTEX_PROVIDER controls which Vertex provider: "anthropic" or "google" (default)
 export VERTEX_PROVIDER="${VERTEX_PROVIDER:-google}"
@@ -161,7 +175,7 @@ else
   log_info "No Anthropic API key or Vertex — agents will use in-cluster model (${MODEL_ENDPOINT})"
 fi
 
-ENVSUBST_VARS='${CLUSTER_DOMAIN} ${OPENCLAW_PREFIX} ${OPENCLAW_NAMESPACE} ${OPENCLAW_GATEWAY_TOKEN} ${OPENCLAW_OAUTH_CLIENT_SECRET} ${OPENCLAW_OAUTH_COOKIE_SECRET} ${ANTHROPIC_API_KEY} ${SHADOWMAN_CUSTOM_NAME} ${SHADOWMAN_DISPLAY_NAME} ${MODEL_ENDPOINT} ${DEFAULT_AGENT_MODEL} ${GOOGLE_CLOUD_PROJECT} ${GOOGLE_CLOUD_LOCATION} ${KEYCLOAK_URL} ${KEYCLOAK_REALM} ${KEYCLOAK_ADMIN_USERNAME} ${KEYCLOAK_ADMIN_PASSWORD}'
+ENVSUBST_VARS='${CLUSTER_DOMAIN} ${OPENCLAW_PREFIX} ${OPENCLAW_NAMESPACE} ${OPENCLAW_GATEWAY_TOKEN} ${OPENCLAW_OAUTH_CLIENT_SECRET} ${OPENCLAW_OAUTH_COOKIE_SECRET} ${ANTHROPIC_API_KEY} ${SHADOWMAN_CUSTOM_NAME} ${SHADOWMAN_DISPLAY_NAME} ${MODEL_ENDPOINT} ${DEFAULT_AGENT_MODEL} ${GOOGLE_CLOUD_PROJECT} ${GOOGLE_CLOUD_LOCATION} ${KEYCLOAK_URL} ${KEYCLOAK_REALM} ${KEYCLOAK_ADMIN_USERNAME} ${KEYCLOAK_ADMIN_PASSWORD} ${MLFLOW_TRACKING_URI} ${MLFLOW_EXPERIMENT_ID} ${MLFLOW_TLS_INSECURE}'
 
 for tpl in $(find "$REPO_ROOT/agents/openclaw/agents" -name '*.envsubst'); do
   yaml="${tpl%.envsubst}"
@@ -256,9 +270,9 @@ $KUBECTL rollout status deployment/openclaw -n "$OPENCLAW_NAMESPACE" --timeout=3
 log_success "OpenClaw ready"
 echo ""
 
-# Install agent AGENTS.md and agent.json into each workspace
+# Install agent workspace files (AGENTS.md, agent.json, SOUL.md, etc.) into each workspace
 # Auto-discover: find all deployed agent ConfigMaps and extract their agent ID
-log_info "Installing agent identity files into workspaces..."
+log_info "Installing agent workspace files into workspaces..."
 for agent_yaml in "$REPO_ROOT/agents/openclaw/agents"/*/*-agent.yaml; do
   [ -f "$agent_yaml" ] || continue
   AGENT_DIR_NAME="$(basename "$(dirname "$agent_yaml")")"
@@ -277,10 +291,13 @@ for agent_yaml in "$REPO_ROOT/agents/openclaw/agents"/*/*-agent.yaml; do
 
   # Ensure workspace directory exists
   $KUBECTL exec deployment/openclaw -n "$OPENCLAW_NAMESPACE" -c gateway -- mkdir -p "$WORKSPACE_DIR"
-  for key in AGENTS.md agent.json; do
-    $KUBECTL get configmap "$CM_NAME" -n "$OPENCLAW_NAMESPACE" -o jsonpath="{.data.${key//./\\.}}" | \
-      $KUBECTL exec -i deployment/openclaw -n "$OPENCLAW_NAMESPACE" -c gateway -- \
+  for key in AGENTS.md agent.json SOUL.md IDENTITY.md TOOLS.md USER.md HEARTBEAT.md MEMORY.md; do
+    # Skip keys that don't exist in this ConfigMap (non-shadowman agents may only have AGENTS.md + agent.json)
+    VALUE=$($KUBECTL get configmap "$CM_NAME" -n "$OPENCLAW_NAMESPACE" -o jsonpath="{.data.${key//./\\.}}" 2>/dev/null) || true
+    if [ -n "$VALUE" ]; then
+      echo "$VALUE" | $KUBECTL exec -i deployment/openclaw -n "$OPENCLAW_NAMESPACE" -c gateway -- \
         sh -c "cat > ${WORKSPACE_DIR}/${key}"
+    fi
   done
   log_success "  ${AGENT_DIR_NAME} → ${WORKSPACE}"
 done
