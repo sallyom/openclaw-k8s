@@ -50,9 +50,10 @@ A reproducible demo of **AI agents running across hybrid platforms** — OpenShi
 ```bash
 ./scripts/setup.sh                    # OpenShift (interactive)
 ./scripts/setup.sh --k8s              # Vanilla Kubernetes
+./scripts/setup.sh --preserve-config  # Re-deploy without overwriting live config
 ```
 
-`setup.sh` prompts for namespace prefix, agent name, API keys, and optional Vertex AI / A2A config. It generates secrets into `.env` (git-ignored), builds a `generated/` directory with processed templates, and deploys via kustomize.
+`setup.sh` prompts for namespace prefix, agent name, API keys, and optional Vertex AI / A2A config. It generates secrets into `.env` (git-ignored), builds a `generated/` directory with processed templates, and deploys via kustomize. On re-runs, it detects config drift (agents added via `add-agent.sh`, UI changes) and prompts to preserve the live config. Use `--preserve-config` to skip the prompt.
 
 ### Edge (RHEL / Fedora)
 
@@ -83,6 +84,7 @@ kubectl port-forward svc/openclaw 18789:18789 -n <prefix>-openclaw
 | Script | Purpose |
 |--------|---------|
 | `./scripts/export-config.sh` | Export live `openclaw.json` from running pod |
+| `./scripts/add-agent.sh` | Scaffold and deploy a new agent end-to-end |
 | `./scripts/update-jobs.sh` | Update cron jobs without full re-deploy |
 | `./scripts/deploy-otelcollector.sh` | Deploy OTEL sidecar collector for MLflow trace export |
 | `./scripts/teardown.sh` | Remove namespace, resources, PVCs |
@@ -165,15 +167,20 @@ To add a new agent, copy `agents/_template/` and customize.
 ### Config Lifecycle (K8s and Edge)
 
 ```
-.envsubst template    -->    generated/     -->    ConfigMap    -->    PVC (live config)
-(source of truth)          (envsubst output)     (K8s object)       /home/node/.openclaw/openclaw.json
-                           setup.sh builds                          init container copies
-                           this directory                           on EVERY start
+.envsubst template  -->  generated/  -->  openclaw-config     (template intent)
+(source of truth)       (envsubst)       (K8s ConfigMap)
+                                               │
+                                         init container
+                                               │
+                                               ▼
+                                  PVC /home/node/.openclaw/openclaw.json
+                                        (live config used by gateway)
 ```
 
-- The init container copies `openclaw.json`, `AGENTS.md`, and `agent.json` from ConfigMap mounts into the PVC on every start
-- UI changes write to PVC only — they are lost on next restart
-- Use `./scripts/export-config.sh` to capture live config before it gets overwritten
+- The `openclaw-config` ConfigMap is derived from templates and owned by `setup.sh`
+- The init container copies it to the PVC at startup, where the gateway reads and writes it at runtime
+- Use `./scripts/export-config.sh` to save the live config from the running pod for reference or diffing
+- `setup.sh` detects drift between the live ConfigMap and the new template, and prompts to preserve or reset
 
 ### Per-User Namespaces (K8s)
 
@@ -217,7 +224,7 @@ When A2A is enabled:
 
 When A2A is disabled (default):
 - `kagenti.io/inject` label is patched to `disabled`, webhook skips injection
-- Default deployment has 3 containers: gateway + agent-card (A2A bridge) + init-config (OpenShift adds oauth-proxy)
+- Default deployment has 2 containers: gateway + agent-card (A2A bridge) + init-config init container (OpenShift adds oauth-proxy)
 
 ## Observability
 
@@ -277,7 +284,7 @@ All platforms emit OTLP traces to MLflow:
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | EACCES on `/home/node/.openclaw/canvas` | PVC owned by wrong UID | Delete PVC, redeploy (K8s patch sets fsGroup: 1000) |
-| Config changes lost after restart | Init container overwrites from ConfigMap | Export with `export-config.sh` first |
+| Config changes lost after restart | Init container overwrites from ConfigMap | Run `export-config.sh` to save live config, then `setup.sh --preserve-config` to keep it during redeploy |
 | OAuthClient 500 "unauthorized_client" | `oc apply` corrupted secret state | Delete and recreate OAuthClient |
 | Agent shows wrong name | Init overwrote workspace or browser cache | Re-run `setup-agents.sh`; clear localStorage |
 | Kustomize overwrites agent ConfigMap | Base includes default shadowman-agent | `setup-agents.sh` applies ConfigMaps after kustomize |

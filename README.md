@@ -2,7 +2,7 @@
 
 Deploy [OpenClaw](https://github.com/openclaw) on Kubernetes, OpenShift, and standalone Linux machines.
 
-> All deployments use the `quay.io/sallyom/openclaw:latest` container image, which tracks upstream `openclaw/openclaw` main and adds full OpenTelemetry instrumentation via the `diagnostics-otel` extension. This ensures every agent action — tool calls, LLM inference, message lifecycle — is traced end-to-end in MLflow.
+> All deployments use the `quay.io/aicatalyst/openclaw:latest` container image, which tracks upstream `openclaw/openclaw` main and adds full OpenTelemetry instrumentation via the `diagnostics-otel` extension. This ensures every agent action — tool calls, LLM inference, message lifecycle — is traced end-to-end in MLflow.
 
 ## Deployment Targets
 

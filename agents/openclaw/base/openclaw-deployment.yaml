@@ -51,13 +51,14 @@ spec:
         - sh
         - -c
         - |
-          # Copy main config
+          # Copy config from ConfigMap to PVC
           cp /config/openclaw.json /home/node/.openclaw/openclaw.json
           chmod 644 /home/node/.openclaw/openclaw.json
 
           # Create OpenClaw default workspace structure
           mkdir -p /home/node/.openclaw/workspace
           mkdir -p /home/node/.openclaw/skills
+          mkdir -p /home/node/.openclaw/cron
 
           # Create agents directory structure for session transcripts and usage tracking
           # Session transcripts are stored at: ~/.openclaw/agents/<agent_id>/sessions/*.jsonl
@@ -77,8 +78,11 @@ spec:
             cp /agents/shadowman/agent.json /home/node/.openclaw/workspace/agent.json 2>/dev/null || echo "Warning: shadowman agent.json not found"
           fi
 
-          # Set permissions (for arbitrary UID in OpenShift)
-          chmod -R 775 /home/node/.openclaw
+          # Set permissions for arbitrary UID support (OpenShift convention):
+          # GID 0 (root group) ownership + group read/write so any container
+          # in the pod can access the PVC regardless of assigned UID.
+          chgrp -R 0 /home/node/.openclaw
+          chmod -R g=u /home/node/.openclaw
 
           echo "✅ Basic config initialized with shadowman agent"
           echo "   📊 Session transcripts and usage data will be stored in agents/<agent_id>/sessions/"
@@ -169,8 +173,10 @@ spec:
           value: /home/node
         - name: OPENCLAW_CONFIG_DIR
           value: /home/node/.openclaw
+        - name: OPENCLAW_STATE_DIR
+          value: /home/node/.openclaw
         - name: OPENCLAW_CLI_PATH
-          value: /app/dist/index.js
+          value: /opt/app-root/src/openclaw.mjs
         - name: TERM
           value: xterm-256color
         - name: NODE_ENV

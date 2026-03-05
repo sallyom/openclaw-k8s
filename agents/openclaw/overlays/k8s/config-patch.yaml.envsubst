@@ -29,7 +29,7 @@ data:
       },
       "models": {
         "providers": {
-          "nerc": {
+          "local": {
             "baseUrl": "${MODEL_ENDPOINT}",
             "api": "openai-completions",
             "apiKey": "fakekey",

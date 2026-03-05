@@ -14,6 +14,7 @@
 #   ./setup.sh --with-a2a                   # Deploy with Kagenti AIB (webhook-injected sidecars)
 #   ./setup.sh --k8s                        # Deploy to vanilla Kubernetes (minikube, kind, etc.)
 #   ./setup.sh --k8s --with-a2a             # K8s with A2A
+#   ./setup.sh --preserve-config            # Auto-preserve live config without prompting (skips drift detection prompt)
 #   ./setup.sh --env-file path/to/.env      # Use a specific .env file (default: .env)
 #
 # This script:
@@ -45,6 +46,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Parse flags
 K8S_MODE=false
 A2A_ENABLED=false
+PRESERVE_CONFIG=false
 ENV_FILE=""
 KC_REALM="${KEYCLOAK_REALM:-demo}"
 KC_NAMESPACE="${KEYCLOAK_NAMESPACE:-keycloak}"
@@ -52,6 +54,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --k8s) K8S_MODE=true; shift ;;
     --with-a2a) A2A_ENABLED=true; shift ;;
+    --preserve-config) PRESERVE_CONFIG=true; shift ;;
     --env-file) ENV_FILE="$2"; shift 2 ;;
     --realm) KC_REALM="$2"; shift 2 ;;
     --keycloak-namespace) KC_NAMESPACE="$2"; shift 2 ;;
@@ -508,7 +511,7 @@ elif [ "${VERTEX_ENABLED:-}" = "true" ]; then
   export DEFAULT_AGENT_MODEL="google-vertex/gemini-2.5-pro"
   log_info "Using Google Vertex (Gemini) as default agent model"
 else
-  export DEFAULT_AGENT_MODEL="nerc/openai/gpt-oss-20b"
+  export DEFAULT_AGENT_MODEL="local/openai/gpt-oss-20b"
   log_info "No Anthropic API key or Vertex — agents will use in-cluster model (${MODEL_ENDPOINT})"
 fi
 
@@ -691,6 +694,67 @@ else
   echo ""
 fi
 
+# Detect config drift: compare live openclaw-config ConfigMap against the new
+# template config we're about to deploy. If they differ (e.g., agents added via
+# add-agent.sh or config exported via export-config.sh), prompt to preserve.
+_SAVED_CONFIG=""
+_LIVE_CONFIG=$($KUBECTL get configmap openclaw-config -n "$OPENCLAW_NAMESPACE" \
+  -o jsonpath='{.data.openclaw\.json}' 2>/dev/null) || true
+
+if [ -n "$_LIVE_CONFIG" ]; then
+  # Extract the new openclaw.json from the generated config-patch
+  _NEW_CONFIG=$(python3 -c "
+import re, sys
+with open('$OPENCLAW_OVERLAY/config-patch.yaml') as f:
+    content = f.read()
+# Extract JSON blob from the YAML data field
+match = re.search(r'openclaw\.json:\s*\|\s*\n((?:\s+.*\n?)*)', content)
+if not match:
+    sys.exit(1)
+# Strip YAML indentation
+lines = match.group(1).rstrip().split('\n')
+indent = len(lines[0]) - len(lines[0].lstrip())
+print('\n'.join(l[indent:] for l in lines))
+" 2>/dev/null) || true
+
+  if [ -n "$_NEW_CONFIG" ]; then
+    # Compare live vs new (normalize JSON to ignore formatting differences)
+    _HAS_DRIFT=$(python3 -c "
+import json, sys
+try:
+    live = json.loads(sys.argv[1])
+    new = json.loads(sys.argv[2])
+    sys.exit(0 if live == new else 1)
+except:
+    sys.exit(1)
+" "$_LIVE_CONFIG" "$_NEW_CONFIG" 2>/dev/null; echo $?)
+
+    if [ "$_HAS_DRIFT" = "1" ]; then
+      if $PRESERVE_CONFIG; then
+        log_info "Config drift detected — preserving live config (--preserve-config)"
+        _SAVED_CONFIG="$_LIVE_CONFIG"
+      else
+        echo ""
+        log_warn "Your running config has changed since last deploy."
+        log_warn "This can happen from UI edits, /bind commands, or add-agent.sh."
+        echo ""
+        echo "  1) Keep your current config (preserves runtime changes)"
+        echo "  2) Reset to a fresh config from templates (discards runtime changes)"
+        echo ""
+        read -p "  Choose [1]: " -n 1 -r
+        echo
+        if [[ $REPLY == "2" ]]; then
+          log_success "Will deploy fresh template config"
+        else
+          _SAVED_CONFIG="$_LIVE_CONFIG"
+          log_success "Keeping your current config"
+        fi
+      fi
+      echo ""
+    fi
+  fi
+fi
+
 # Deploy OpenClaw with Security Hardening
 log_info "Deploying OpenClaw Gateway with security hardening..."
 log_info "  ✓ ResourceQuota (namespace limits)"
@@ -705,6 +769,15 @@ else
 fi
 $KUBECTL apply -k "$OPENCLAW_OVERLAY"
 log_success "OpenClaw deployed with enterprise security"
+
+# Restore saved config after kustomize apply (overwrites the template ConfigMap)
+if [ -n "$_SAVED_CONFIG" ]; then
+  log_info "Restoring preserved config to ConfigMap..."
+  $KUBECTL create configmap openclaw-config \
+    --from-literal="openclaw.json=$_SAVED_CONFIG" \
+    -n "$OPENCLAW_NAMESPACE" --dry-run=client -o yaml | $KUBECTL apply -f -
+  log_success "Live config restored to openclaw-config"
+fi
 echo ""
 
 # Deploy OTEL sidecar collector (requires OpenTelemetry Operator)

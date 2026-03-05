@@ -181,7 +181,7 @@ elif [ "${VERTEX_ENABLED:-}" = "true" ]; then
   export DEFAULT_AGENT_MODEL="google-vertex/gemini-2.5-pro"
   log_info "Using Google Vertex (Gemini) as default agent model"
 else
-  export DEFAULT_AGENT_MODEL="nerc/openai/gpt-oss-20b"
+  export DEFAULT_AGENT_MODEL="local/openai/gpt-oss-20b"
   log_info "No Anthropic API key or Vertex — agents will use in-cluster model (${MODEL_ENDPOINT})"
 fi
 

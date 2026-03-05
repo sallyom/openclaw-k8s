@@ -159,7 +159,7 @@ Each agent can use a different model provider. The model is set in the config ov
 {
   "agents": {
     "defaults": {
-      "model": { "primary": "nerc/openai/gpt-oss-20b" }
+      "model": { "primary": "local/openai/gpt-oss-20b" }
     },
     "list": [
       {
@@ -179,7 +179,7 @@ Resolution order: agent-specific `model` > `agents.defaults.model.primary` > bui
 Model priority during setup (auto-detected):
 1. Anthropic API key provided → `anthropic/claude-sonnet-4-6`
 2. Google Vertex enabled → `google-vertex/gemini-2.5-pro`
-3. Neither → `nerc/openai/gpt-oss-20b` (in-cluster vLLM)
+3. Neither → `local/openai/gpt-oss-20b` (in-cluster vLLM)
 
 ## Files
 

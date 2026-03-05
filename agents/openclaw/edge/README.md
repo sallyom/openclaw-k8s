@@ -82,7 +82,7 @@ edge/config/
 
 ### OpenClaw Agent
 
-Runs the same container image as OpenShift (`quay.io/sallyom/openclaw:latest`). Uses `hostNetwork: true` so it can reach local services. The agent has an allowlisted set of system commands it can execute:
+Runs the same container image as OpenShift (`quay.io/aicatalyst/openclaw:latest`). Uses `hostNetwork: true` so it can reach local services. The agent has an allowlisted set of system commands it can execute:
 
 `df`, `free`, `ps`, `uptime`, `uname`, `hostname`, `cat`, `grep`, `ls`, `wc`, `date`, `findmnt`, `lsblk`
 

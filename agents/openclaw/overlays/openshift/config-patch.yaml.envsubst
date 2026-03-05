@@ -37,7 +37,7 @@ data:
       },
       "models": {
         "providers": {
-          "nerc": {
+          "local": {
             "baseUrl": "${MODEL_ENDPOINT}",
             "api": "openai-completions",
             "apiKey": "fakekey",
@@ -63,8 +63,8 @@ data:
             "api": "anthropic-messages",
             "models": [
               {
-                "id": "claude-sonnet-4-5@20250929",
-                "name": "Claude Sonnet 4.5 (Vertex)",
+                "id": "claude-sonnet-4-6",
+                "name": "Claude Sonnet 4.6 (Vertex)",
                 "reasoning": true,
                 "input": ["text", "image"],
                 "cost": {"input": 3, "output": 15, "cacheRead": 0.3, "cacheWrite": 3.75},

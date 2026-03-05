@@ -136,7 +136,7 @@ The agent is stopped by default (`Restart=no`) — only the central supervisor
 can start it via SSH.
 
 Key design choices:
-- **Same container image** (`quay.io/sallyom/openclaw:latest`) as OpenShift — no drift
+- **Same container image** (`quay.io/aicatalyst/openclaw:latest`) as OpenShift — no drift
 - **`Network=host`** — agent can reach local services, databases, APIs
 - **SELinux enforcing** — `:Z` volume labeling, non-root container (uid 1000)
 - **Persistent volume** — config, workspace, session history survive restarts

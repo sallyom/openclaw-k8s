@@ -285,8 +285,8 @@ echo ""
 if $_ENV_REUSE && [ -n "${OPENCLAW_IMAGE:-}" ]; then
   log_success "Image: $OPENCLAW_IMAGE"
 else
-  read -p "  OpenClaw container image [quay.io/sallyom/openclaw:latest]: " OPENCLAW_IMAGE
-  OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-quay.io/sallyom/openclaw:latest}"
+  read -p "  OpenClaw container image [quay.io/aicatalyst/openclaw:latest]: " OPENCLAW_IMAGE
+  OPENCLAW_IMAGE="${OPENCLAW_IMAGE:-quay.io/aicatalyst/openclaw:latest}"
 fi
 echo ""
 
