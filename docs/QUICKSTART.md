@@ -162,7 +162,7 @@ unless you pass `--delete-env`.
 | What | How |
 |------|-----|
 | Create a custom agent | `./scripts/add-agent.sh` (scaffolds, deploys, and restarts — end to end) |
-| Preserve UI changes | `./scripts/sync-config.sh` (syncs live config back to ConfigMap) |
+| Save live config | `./scripts/export-config.sh` (exports live `openclaw.json` from running pod) |
 | Re-deploy safely | `./scripts/setup.sh` detects config drift and prompts to preserve |
 | Add scheduled jobs | Create a `JOB.md` in your agent directory, run `./scripts/update-jobs.sh` |
 | Enable observability | `./scripts/deploy-otelcollector.sh` (requires OTEL Operator + MLflow) |

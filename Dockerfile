@@ -4,12 +4,17 @@
 # Build:
 #   podman build -t openclaw:latest .
 #   podman build --build-arg OPENCLAW_REF=v1.2.3 -t openclaw:v1.2.3 .
+#   podman build --build-arg OPENCLAW_EXTENSIONS="diagnostics-otel memory-core telegram" -t openclaw:latest .
 
 # ── Stage 1: Build ──────────────────────────────────────────────
 FROM registry.access.redhat.com/ubi9/nodejs-22 AS build
 
 ARG OPENCLAW_REPO=https://github.com/openclaw/openclaw.git
 ARG OPENCLAW_REF=main
+# Opt-in extensions at build time (space-separated directory names).
+# When empty (default), no extensions are included (matching upstream).
+# Example: --build-arg OPENCLAW_EXTENSIONS="diagnostics-otel memory-core telegram"
+ARG OPENCLAW_EXTENSIONS=""
 
 WORKDIR /opt/app-root/src
 
@@ -20,6 +25,24 @@ USER 1001
 RUN git clone --depth 1 --branch "${OPENCLAW_REF}" "${OPENCLAW_REPO}" /tmp/openclaw && \
     cp -a /tmp/openclaw/. . && \
     rm -rf /tmp/openclaw
+
+# Prune extensions that have external dependencies (would bloat pnpm install).
+# Extensions with no deps (memory-core, telegram, slack, etc.) are kept — they're
+# just source files loaded at runtime, matching what upstream ships by default.
+# Use OPENCLAW_EXTENSIONS to opt-in extensions that need deps (e.g. diagnostics-otel).
+ARG OPENCLAW_EXTENSIONS
+RUN keep=" $OPENCLAW_EXTENSIONS " && \
+    for ext in extensions/*/; do \
+      [ ! -f "$ext/package.json" ] && continue; \
+      name="$(basename "$ext")"; \
+      has_deps=$(node -e "const d=require('./$ext/package.json').dependencies||{}; process.exit(Object.keys(d).length>0?0:1)" 2>/dev/null && echo yes || echo no); \
+      if [ "$has_deps" = "yes" ]; then \
+        case "$keep" in \
+          *" $name "*) ;; \
+          *) rm -rf "$ext" ;; \
+        esac; \
+      fi; \
+    done
 
 # Install the exact pnpm version declared in package.json
 USER 0

@@ -19,7 +19,7 @@ OpenClaw runs on any Kubernetes cluster, but OpenShift adds layers of security t
 - All Linux capabilities dropped
 - No privilege escalation
 
-The OpenClaw gateway runs happily under `restricted-v2` with no custom SCC required. Every container in the pod — gateway, oauth-proxy, and init-config — runs unprivileged with `allowPrivilegeEscalation: false` and `capabilities.drop: [ALL]`. OpenShift assigns an arbitrary UID from the namespace's allocated range at runtime, and because the container image is built with GID 0 permissions, everything just works.
+The OpenClaw gateway runs happily under `restricted-v2` with no custom SCC required. Every container in the pod — gateway, oauth-proxy, and init-config — runs unprivileged with `allowPrivilegeEscalation: false` and `capabilities.drop: [ALL]`. OpenShift assigns an arbitrary UID from the namespace's allocated range at runtime, and because the init container sets GID 0 permissions on the PVC (`chgrp -R 0` + `chmod -R g=u`), all containers can access shared state regardless of their assigned UID.
 
 **Routes with TLS** — OpenShift Routes provide automatic TLS termination via the cluster's wildcard certificate. The gateway listens on loopback only (`127.0.0.1:18789`) — all external traffic goes through the oauth-proxy, which handles authentication before forwarding to the gateway. OpenShift's HAProxy-based Ingress Controller handles WebSocket natively — after the HTTP upgrade handshake completes, it treats the connection as a bidirectional TCP tunnel. No special annotation needed.
 
@@ -150,9 +150,9 @@ The setup script supports multiple model providers. You can also change models a
 
 ## Day-2 operations
 
-**Re-deploying safely** — You can re-run `setup.sh` at any time — to pick up a new API key, change a .env setting, or upgrade. The script detects if your live config has drifted from the templates (agents you've added, settings you've changed) and prompts you to preserve it. Your agents and config changes survive the re-deploy. Use `--preserve-config` to skip the prompt and always preserve.
+**Saving config changes** — If you tweak settings through the Control UI, add agents with `add-agent.sh`, or use features like `/bind` in Telegram, run `./scripts/export-config.sh` to save the live config from the running pod. This gives you a local copy you can review, diff against the template, or use as a reference.
 
-**Preserving UI changes** — The gateway writes config changes to the PVC, but the init container overwrites from the ConfigMap on every restart. If you've tweaked settings through the Control UI, run `./scripts/sync-config.sh` to push the live config back to the ConfigMap so your changes survive restarts. The next time you run `setup.sh`, it will detect these synced changes and offer to keep them.
+**Re-deploying safely** — You can re-run `setup.sh` at any time to pick up a new API key or upgrade. The script detects if the live ConfigMap has drifted from the new template and prompts you to preserve it. Your agents and runtime changes survive the re-deploy. Use `--preserve-config` to skip the prompt.
 
 **Backing up state** — All persistent state lives on the PVC. Use a VolumeSnapshot to back it up.
 

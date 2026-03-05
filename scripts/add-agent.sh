@@ -223,7 +223,7 @@ done
 export MODEL_ENDPOINT="${MODEL_ENDPOINT:-http://vllm.openclaw-llms.svc.cluster.local/v1}"
 export SHADOWMAN_CUSTOM_NAME="${SHADOWMAN_CUSTOM_NAME:-shadowman}"
 export SHADOWMAN_DISPLAY_NAME="${SHADOWMAN_DISPLAY_NAME:-Shadowman}"
-export DEFAULT_AGENT_MODEL="${DEFAULT_AGENT_MODEL:-nerc/openai/gpt-oss-20b}"
+export DEFAULT_AGENT_MODEL="${DEFAULT_AGENT_MODEL:-local/openai/gpt-oss-20b}"
 
 ENVSUBST_VARS='${OPENCLAW_PREFIX} ${OPENCLAW_NAMESPACE} ${SHADOWMAN_CUSTOM_NAME} ${SHADOWMAN_DISPLAY_NAME} ${DEFAULT_AGENT_MODEL}'
 
@@ -275,7 +275,7 @@ log_success "Agent added to live config"
 
 # ---- Step 6: Sync live config back to ConfigMap ----
 
-log_info "Syncing config to ConfigMap (so restarts preserve the change)..."
+log_info "Syncing config to openclaw-config ConfigMap..."
 LIVE_CONFIG=$($KUBECTL exec deployment/openclaw -n "$OPENCLAW_NAMESPACE" -c gateway -- \
   cat /home/node/.openclaw/openclaw.json)
 
@@ -283,7 +283,7 @@ $KUBECTL create configmap openclaw-config \
   --from-literal="openclaw.json=$LIVE_CONFIG" \
   -n "$OPENCLAW_NAMESPACE" --dry-run=client -o yaml | $KUBECTL apply -f -
 
-log_success "ConfigMap synced"
+log_success "Config synced to ConfigMap"
 
 # ---- Step 7: Install workspace files ----
 
@@ -340,5 +340,5 @@ if [ -f "$AGENTS_DIR/$AGENT_ID/JOB.md" ]; then
   echo "  Update jobs:   ./scripts/update-jobs.sh"
   echo ""
 fi
-echo "  Sync UI changes: ./scripts/sync-config.sh"
+echo "  Export live config: ./scripts/export-config.sh"
 echo ""

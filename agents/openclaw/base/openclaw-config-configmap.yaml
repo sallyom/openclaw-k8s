@@ -57,7 +57,7 @@ data:
       },
       "models": {
         "providers": {
-          "nerc": {
+          "local": {
             "baseUrl": "http://vllm.openclaw-llms.svc.cluster.local/v1",
             "api": "openai-completions",
             "apiKey": "fakekey",
@@ -121,7 +121,7 @@ data:
         "defaults": {
           "workspace": "~/.openclaw/workspace",
           "model": {
-            "primary": "nerc/openai/gpt-oss-20b"
+            "primary": "local/openai/gpt-oss-20b"
           }
         },
         "list": [

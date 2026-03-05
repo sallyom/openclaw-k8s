@@ -216,9 +216,9 @@ data:
     holds lookup values and security notes.
 
     ## Secrets and Config
-    - Workspace .env: ~/.openclaw/workspace-${OPENCLAW_PREFIX}_${SHADOWMAN_CUSTOM_NAME}/.env
+    - Workspace .env: ~/.openclaw/workspace-${OPENCLAW_PREFIX}_${SHADOWMAN_CUSTOM_NAME}/.env (optional, may not exist)
     - NEVER cat, echo, or display .env contents
-    - Source .env silently, then use variables in commands
+    - If .env exists, source it silently, then use variables in commands
 
     ## Skills
     Check the skills directory for installed skills:
@@ -247,7 +247,7 @@ data:
     ## Every Heartbeat
     - Verify workspace files are present and readable
     - Check that skills directory exists and skills are installed
-    - Confirm .env is loadable (source it silently)
+    - If .env exists, confirm it is loadable (source it silently)
 
     ## Reporting
     Heartbeat turns should usually end with NO_REPLY unless there is

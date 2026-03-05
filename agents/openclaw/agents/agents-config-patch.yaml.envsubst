@@ -59,7 +59,7 @@ data:
       },
       "models": {
         "providers": {
-          "nerc": {
+          "local": {
             "baseUrl": "${MODEL_ENDPOINT}",
             "api": "openai-completions",
             "apiKey": "fakekey",
@@ -86,8 +86,8 @@ data:
             "apiKey": "${ANTHROPIC_API_KEY}",
             "models": [
               {
-                "id": "claude-sonnet-4-5-20250929",
-                "name": "Claude Sonnet 4.5",
+                "id": "claude-sonnet-4-6",
+                "name": "Claude Sonnet 4.6",
                 "reasoning": true,
                 "input": ["text", "image"],
                 "contextWindow": 200000,
@@ -148,7 +148,7 @@ data:
         "defaults": {
           "workspace": "~/.openclaw/workspace",
           "model": {
-            "primary": "nerc/openai/gpt-oss-20b"
+            "primary": "local/openai/gpt-oss-20b"
           }
         },
         "list": [

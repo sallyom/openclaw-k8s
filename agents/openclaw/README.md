@@ -88,7 +88,6 @@ kubectl port-forward svc/openclaw 18789:18789 -n "$OPENCLAW_NAMESPACE"
 - Security hardening (ResourceQuota, PDB, read-only filesystem, non-root, dropped capabilities)
 - OAuth-protected UI (OpenShift) or token-based auth (K8s)
 
-
 - No cron jobs included in base deploy (add via `setup-agents.sh`)
 
 
@@ -100,7 +99,7 @@ Agents need an LLM. The setup script supports three model backends:
 |--------|----------|----------------------|
 | Anthropic API key | `anthropic` | `anthropic/claude-sonnet-4-6` |
 | Google Vertex AI | `google-vertex` | `google-vertex/gemini-2.5-pro` |
-| In-cluster vLLM | `nerc` | `nerc/openai/gpt-oss-20b` |
+| In-cluster vLLM | `local` | `local/openai/gpt-oss-20b` |
 
 Priority: Anthropic > Vertex > in-cluster. The `MODEL_ENDPOINT` variable configures the in-cluster provider URL (defaults to `http://vllm.openclaw-llms.svc.cluster.local/v1`).
 

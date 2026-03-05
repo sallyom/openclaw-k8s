@@ -511,7 +511,7 @@ elif [ "${VERTEX_ENABLED:-}" = "true" ]; then
   export DEFAULT_AGENT_MODEL="google-vertex/gemini-2.5-pro"
   log_info "Using Google Vertex (Gemini) as default agent model"
 else
-  export DEFAULT_AGENT_MODEL="nerc/openai/gpt-oss-20b"
+  export DEFAULT_AGENT_MODEL="local/openai/gpt-oss-20b"
   log_info "No Anthropic API key or Vertex — agents will use in-cluster model (${MODEL_ENDPOINT})"
 fi
 
@@ -694,9 +694,9 @@ else
   echo ""
 fi
 
-# Detect config drift: compare live ConfigMap against what we're about to deploy.
-# If they differ (e.g., agents added via add-agent.sh or UI changes synced via
-# sync-config.sh), prompt the user to preserve their live config.
+# Detect config drift: compare live openclaw-config ConfigMap against the new
+# template config we're about to deploy. If they differ (e.g., agents added via
+# add-agent.sh or config exported via export-config.sh), prompt to preserve.
 _SAVED_CONFIG=""
 _LIVE_CONFIG=$($KUBECTL get configmap openclaw-config -n "$OPENCLAW_NAMESPACE" \
   -o jsonpath='{.data.openclaw\.json}' 2>/dev/null) || true
@@ -735,17 +735,19 @@ except:
         _SAVED_CONFIG="$_LIVE_CONFIG"
       else
         echo ""
-        log_warn "Your live config has changed since last setup."
-        log_warn "This can happen from add-agent.sh, sync-config.sh, or UI edits."
-        log_warn "Re-deploying will overwrite these changes with the template config."
+        log_warn "Your running config has changed since last deploy."
+        log_warn "This can happen from UI edits, /bind commands, or add-agent.sh."
         echo ""
-        read -p "  Preserve your live config? (Y/n): " -n 1 -r
+        echo "  1) Keep your current config (preserves runtime changes)"
+        echo "  2) Reset to a fresh config from templates (discards runtime changes)"
+        echo ""
+        read -p "  Choose [1]: " -n 1 -r
         echo
-        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-          _SAVED_CONFIG="$_LIVE_CONFIG"
-          log_success "Live config will be preserved"
+        if [[ $REPLY == "2" ]]; then
+          log_success "Will deploy fresh template config"
         else
-          log_info "Live config will be overwritten with template config"
+          _SAVED_CONFIG="$_LIVE_CONFIG"
+          log_success "Keeping your current config"
         fi
       fi
       echo ""
@@ -767,17 +769,16 @@ else
 fi
 $KUBECTL apply -k "$OPENCLAW_OVERLAY"
 log_success "OpenClaw deployed with enterprise security"
-echo ""
 
-# Restore saved ConfigMap after kustomize apply
+# Restore saved config after kustomize apply (overwrites the template ConfigMap)
 if [ -n "$_SAVED_CONFIG" ]; then
   log_info "Restoring preserved config to ConfigMap..."
   $KUBECTL create configmap openclaw-config \
     --from-literal="openclaw.json=$_SAVED_CONFIG" \
     -n "$OPENCLAW_NAMESPACE" --dry-run=client -o yaml | $KUBECTL apply -f -
-  log_success "Live config restored — agents and UI changes preserved"
-  echo ""
+  log_success "Live config restored to openclaw-config"
 fi
+echo ""
 
 # Deploy OTEL sidecar collector (requires OpenTelemetry Operator)
 if [ "${MLFLOW_TRACKING_URI:-}" != "" ]; then

@@ -39,7 +39,7 @@ OpenTelemetry observability, and security hardening.
 │  └────────────────────────────────────────────────────────────┘ │
 │                                                                 │
 │  Sessions stored on PVC                                         │
-│  Config: openclaw.json (ConfigMap → PVC)                        │
+│  Config: openclaw.json (ConfigMap → init container → PVC)       │
 └────────────────────┬────────────────────────────────────────────┘
                      │
          ┌───────────┼───────────────┐
@@ -70,11 +70,21 @@ Each agent gets an isolated workspace on the PVC:
 
 ### Config Lifecycle
 ```
-.envsubst template → generated/ → ConfigMap → init container → PVC
-(git-committed)      (setup.sh)   (K8s)       (pod restart)   (runtime)
+.envsubst template  -->  generated/  -->  openclaw-config     (template intent)
+(source of truth)       (envsubst)       (K8s ConfigMap)
+                                               │
+                                         init container
+                                               │
+                                               ▼
+                                  PVC /home/node/.openclaw/openclaw.json
+                                        (live config used by gateway)
 ```
 
-Setup scripts build a `generated/` directory that mirrors the source tree with templates processed. Kustomize and kubectl apply run from `generated/`. The init container overwrites `openclaw.json` on every pod restart. UI changes live only on the PVC and are lost unless exported and merged back into the `.envsubst` template.
+Setup scripts build a `generated/` directory that mirrors the source tree with templates processed. Kustomize and kubectl apply run from `generated/`.
+
+The `openclaw-config` ConfigMap is derived from templates and owned by `setup.sh`. The init container copies it to the PVC at startup, where the gateway reads and writes it at runtime.
+
+To save live config changes (UI edits, `/bind` commands, agents added via `add-agent.sh`), use `./scripts/export-config.sh` to export a local copy from the running pod. When re-running `setup.sh`, the script detects drift between the live ConfigMap and the new template and prompts to preserve or reset. Use `--preserve-config` to skip the prompt.
 
 ### OpenTelemetry Observability
 - `diagnostics-otel` plugin emits OTLP traces from the gateway
@@ -133,7 +143,7 @@ Each agent can use a different model provider:
 {
   "agents": {
     "defaults": {
-      "model": { "primary": "nerc/openai/gpt-oss-20b" }
+      "model": { "primary": "local/openai/gpt-oss-20b" }
     },
     "list": [
       {

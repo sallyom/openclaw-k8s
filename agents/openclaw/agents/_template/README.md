@@ -72,8 +72,8 @@ envsubst < myagent-agent.yaml.envsubst > myagent-agent.yaml
 oc apply -f myagent-agent.yaml
 
 # The agent also needs to be added to the live gateway config.
-# The easiest way is to add it via the UI, then sync:
-./scripts/sync-config.sh
+# The easiest way is to add it via the UI, then export:
+./scripts/export-config.sh
 ```
 
 ## Adding a Scheduled Job
