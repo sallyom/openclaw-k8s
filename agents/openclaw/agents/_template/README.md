@@ -2,7 +2,7 @@
 
 ## Quick Start
 
-The fastest way to add an agent — scaffolds files, deploys, and restarts in one command:
+The fastest way to add an agent, scaffolds files, deploys, and restarts in one command:
 
 ```bash
 ./scripts/add-agent.sh
@@ -32,21 +32,50 @@ Your agent is ready to chat immediately.
 ./scripts/add-agent.sh myagent "My Agent" "Monitors API health"
 ```
 
-## Manual Setup
+## AI-Assisted Workflow
 
-If you prefer to do it step by step:
+Write the agent instructions with your AI assistant, then deploy with one command.
 
-### 1. Copy the template
+### 1. Create the agent files
 
-```bash
-cp -r agents/openclaw/agents/_template agents/openclaw/agents/myagent
-cd agents/openclaw/agents/myagent
-mv agent.yaml.template myagent-agent.yaml.envsubst
+Ask your AI assistant to create the agent directory and `.envsubst` template.
+See `repo-watcher` for an example of a complete agent with a cron job:
+
+```
+agents/openclaw/agents/repo-watcher/
+  repo-watcher-agent.yaml.envsubst    # Agent ConfigMap (instructions, identity)
+  JOB.md                               # Cron job (optional)
 ```
 
-### 2. Edit the agent files
+The `.envsubst` file is a Kubernetes ConfigMap containing the agent's AGENTS.md
+(instructions), agent.json (metadata), and any other workspace files. Use
+`${OPENCLAW_PREFIX}`, `${OPENCLAW_NAMESPACE}`, and `${SHADOWMAN_CUSTOM_NAME}`
+for values that vary per deployment.
 
-Open `myagent-agent.yaml.envsubst` and replace all `REPLACE_` placeholders:
+### 2. Deploy
+
+```bash
+./scripts/add-agent.sh repo-watcher
+```
+
+The script detects the existing files, skips scaffolding, and deploys directly.
+It reads the display name and description from your template automatically.
+
+## From-Scratch Workflow
+
+If you prefer to start from the template and fill in placeholders:
+
+### 1. Scaffold
+
+```bash
+./scripts/add-agent.sh --scaffold-only myagent
+```
+
+This creates the directory with a template containing `REPLACE_` placeholders.
+
+### 2. Edit
+
+Open `myagent-agent.yaml.envsubst` and replace the placeholders:
 
 | Placeholder | Example | Description |
 |-------------|---------|-------------|
@@ -56,24 +85,12 @@ Open `myagent-agent.yaml.envsubst` and replace all `REPLACE_` placeholders:
 | `REPLACE_EMOJI` | `🔍` | Emoji shown in UI |
 | `REPLACE_COLOR` | `#FF6B6B` | Hex color for UI |
 
-Write your agent's instructions in the `AGENTS.md` section. This is the markdown
-that tells the agent who it is and what to do.
+Write your agent's instructions in the `AGENTS.md` section.
 
 ### 3. Deploy
 
-Run `add-agent.sh` without `--scaffold-only` to deploy the already-scaffolded agent,
-or deploy manually:
-
 ```bash
-# Run envsubst on the template
-envsubst < myagent-agent.yaml.envsubst > myagent-agent.yaml
-
-# Apply to cluster
-oc apply -f myagent-agent.yaml
-
-# The agent also needs to be added to the live gateway config.
-# The easiest way is to add it via the UI, then export:
-./scripts/export-config.sh
+./scripts/add-agent.sh myagent
 ```
 
 ## Adding a Scheduled Job

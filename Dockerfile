@@ -4,7 +4,7 @@
 # Build:
 #   podman build -t openclaw:latest .
 #   podman build --build-arg OPENCLAW_REF=v1.2.3 -t openclaw:v1.2.3 .
-#   podman build --build-arg OPENCLAW_EXTENSIONS="diagnostics-otel memory-core telegram" -t openclaw:latest .
+#   podman build --build-arg OPENCLAW_EXTENSIONS="diagnostics-otel" -t openclaw:latest .
 
 # ── Stage 1: Build ──────────────────────────────────────────────
 FROM registry.access.redhat.com/ubi9/nodejs-22 AS build
@@ -22,7 +22,8 @@ WORKDIR /opt/app-root/src
 USER 0
 RUN dnf install -y --disablerepo='*' --enablerepo='ubi-*' git && dnf clean all
 USER 1001
-RUN git clone --depth 1 --branch "${OPENCLAW_REF}" "${OPENCLAW_REPO}" /tmp/openclaw && \
+RUN echo "Cloning ${OPENCLAW_REPO} @ ${OPENCLAW_REF}" && \
+    git clone --depth 1 --branch "${OPENCLAW_REF}" "${OPENCLAW_REPO}" /tmp/openclaw && \
     cp -a /tmp/openclaw/. . && \
     rm -rf /tmp/openclaw
 

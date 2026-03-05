@@ -7,9 +7,10 @@ data:
   openclaw.json: |
     {
       "plugins": {
-        "allow": ["diagnostics-otel"],
+        "allow": ["diagnostics-otel", "memory-core"],
         "entries": {
-          "diagnostics-otel": {"enabled": true}
+          "diagnostics-otel": {"enabled": true},
+          "memory-core": {"enabled": true}
         }
       },
       "gateway": {

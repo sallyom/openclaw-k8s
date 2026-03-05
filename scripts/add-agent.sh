@@ -99,82 +99,102 @@ fi
 # Normalize: lowercase, replace spaces with hyphens
 AGENT_ID=$(echo "$AGENT_ID" | tr '[:upper:]' '[:lower:]' | tr ' ' '-' | tr -cd 'a-z0-9-')
 
+SKIP_SCAFFOLD=false
 if [ -d "$AGENTS_DIR/$AGENT_ID" ]; then
-  log_error "Agent directory already exists: $AGENTS_DIR/$AGENT_ID"
-  exit 1
+  if [ -f "$AGENTS_DIR/$AGENT_ID/${AGENT_ID}-agent.yaml.envsubst" ]; then
+    log_info "Found existing agent: $AGENTS_DIR/$AGENT_ID/"
+    log_info "Skipping scaffold, deploying existing agent files."
+    SKIP_SCAFFOLD=true
+
+    # Pull display name and description from existing template if not provided
+    if [ -z "$DISPLAY_NAME" ]; then
+      DISPLAY_NAME=$(grep -m1 'display_name' "$AGENTS_DIR/$AGENT_ID/${AGENT_ID}-agent.yaml.envsubst" \
+        | sed 's/.*"display_name": *"//;s/".*//' 2>/dev/null) || true
+      DISPLAY_NAME="${DISPLAY_NAME:-$AGENT_ID}"
+    fi
+    if [ -z "$DESCRIPTION" ]; then
+      DESCRIPTION=$(grep -m1 'description' "$AGENTS_DIR/$AGENT_ID/${AGENT_ID}-agent.yaml.envsubst" \
+        | head -1 | sed 's/.*"description": *"//;s/".*//' 2>/dev/null) || true
+      DESCRIPTION="${DESCRIPTION:-A custom OpenClaw agent}"
+    fi
+  else
+    log_error "Agent directory exists but has no template: $AGENTS_DIR/$AGENT_ID"
+    log_error "Expected: ${AGENT_ID}-agent.yaml.envsubst"
+    exit 1
+  fi
 fi
 
-if [ -z "$DISPLAY_NAME" ]; then
-  read -p "  Display name (e.g., 'Security Scanner'): " DISPLAY_NAME
+if ! $SKIP_SCAFFOLD; then
   if [ -z "$DISPLAY_NAME" ]; then
-    DISPLAY_NAME="$AGENT_ID"
+    read -p "  Display name (e.g., 'Security Scanner'): " DISPLAY_NAME
+    if [ -z "$DISPLAY_NAME" ]; then
+      DISPLAY_NAME="$AGENT_ID"
+    fi
   fi
-fi
 
-if [ -z "$DESCRIPTION" ]; then
-  read -p "  Description (what does this agent do?): " DESCRIPTION
   if [ -z "$DESCRIPTION" ]; then
-    DESCRIPTION="A custom OpenClaw agent"
+    read -p "  Description (what does this agent do?): " DESCRIPTION
+    if [ -z "$DESCRIPTION" ]; then
+      DESCRIPTION="A custom OpenClaw agent"
+    fi
   fi
-fi
 
-# Optional: emoji and color
-read -p "  Emoji (default: 🤖): " EMOJI
-EMOJI="${EMOJI:-🤖}"
+  # Optional: emoji and color
+  read -p "  Emoji (default: 🤖): " EMOJI
+  EMOJI="${EMOJI:-🤖}"
 
-read -p "  Color hex (default: #6C5CE7): " COLOR
-COLOR="${COLOR:-#6C5CE7}"
+  read -p "  Color hex (default: #6C5CE7): " COLOR
+  COLOR="${COLOR:-#6C5CE7}"
 
-echo ""
+  echo ""
 
-# ---- Step 1: Scaffold from template ----
+  # ---- Step 1: Scaffold from template ----
 
-log_info "Creating agent: $AGENT_ID"
-mkdir -p "$AGENTS_DIR/$AGENT_ID"
+  log_info "Creating agent: $AGENT_ID"
+  mkdir -p "$AGENTS_DIR/$AGENT_ID"
 
-cp "$TEMPLATE_DIR/agent.yaml.template" "$AGENTS_DIR/$AGENT_ID/${AGENT_ID}-agent.yaml.envsubst"
+  cp "$TEMPLATE_DIR/agent.yaml.template" "$AGENTS_DIR/$AGENT_ID/${AGENT_ID}-agent.yaml.envsubst"
 
-# Substitute placeholders
-sed -i.bak \
-  -e "s/REPLACE_AGENT_ID/$AGENT_ID/g" \
-  -e "s/REPLACE_DISPLAY_NAME/$DISPLAY_NAME/g" \
-  -e "s/REPLACE_DESCRIPTION/$DESCRIPTION/g" \
-  -e "s/REPLACE_EMOJI/$EMOJI/g" \
-  -e "s/REPLACE_COLOR/$COLOR/g" \
-  "$AGENTS_DIR/$AGENT_ID/${AGENT_ID}-agent.yaml.envsubst"
-rm -f "$AGENTS_DIR/$AGENT_ID/${AGENT_ID}-agent.yaml.envsubst.bak"
+  # Substitute placeholders
+  sed -i.bak \
+    -e "s/REPLACE_AGENT_ID/$AGENT_ID/g" \
+    -e "s/REPLACE_DISPLAY_NAME/$DISPLAY_NAME/g" \
+    -e "s/REPLACE_DESCRIPTION/$DESCRIPTION/g" \
+    -e "s/REPLACE_EMOJI/$EMOJI/g" \
+    -e "s/REPLACE_COLOR/$COLOR/g" \
+    "$AGENTS_DIR/$AGENT_ID/${AGENT_ID}-agent.yaml.envsubst"
+  rm -f "$AGENTS_DIR/$AGENT_ID/${AGENT_ID}-agent.yaml.envsubst.bak"
 
-log_success "Scaffolded $AGENTS_DIR/$AGENT_ID/"
+  log_success "Scaffolded $AGENTS_DIR/$AGENT_ID/"
 
-# Ask about scheduled job
-echo ""
-read -p "Does this agent need a scheduled job? (y/N): " -n 1 -r
-echo
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-  cp "$TEMPLATE_DIR/JOB.md.template" "$AGENTS_DIR/$AGENT_ID/JOB.md"
-  sed -i.bak "s/REPLACE_AGENT_ID/$AGENT_ID/g" "$AGENTS_DIR/$AGENT_ID/JOB.md"
-  rm -f "$AGENTS_DIR/$AGENT_ID/JOB.md.bak"
-  log_success "Created JOB.md — edit it to set the schedule and instructions"
+  # Ask about scheduled job
+  echo ""
+  read -p "Does this agent need a scheduled job? (y/N): " -n 1 -r
+  echo
+  if [[ $REPLY =~ ^[Yy]$ ]]; then
+    cp "$TEMPLATE_DIR/JOB.md.template" "$AGENTS_DIR/$AGENT_ID/JOB.md"
+    sed -i.bak "s/REPLACE_AGENT_ID/$AGENT_ID/g" "$AGENTS_DIR/$AGENT_ID/JOB.md"
+    rm -f "$AGENTS_DIR/$AGENT_ID/JOB.md.bak"
+    log_success "Created JOB.md — edit it to set the schedule and instructions"
+  fi
 fi
 
 # ---- Stop here if scaffold-only ----
 
 if $SCAFFOLD_ONLY; then
-  AGENT_ID_UNDERSCORE=$(echo "$AGENT_ID" | tr '-' '_')
   echo ""
   echo "╔════════════════════════════════════════════════════════════╗"
-  echo "║  Scaffold Complete (--scaffold-only)                       ║"
+  echo "║  Scaffold Complete                                         ║"
   echo "╚════════════════════════════════════════════════════════════╝"
   echo ""
-  echo "Files created in: $AGENTS_DIR/$AGENT_ID/"
+  echo "  Files: $AGENTS_DIR/$AGENT_ID/"
   echo ""
-  echo "To deploy, run this script again without --scaffold-only,"
-  echo "or deploy manually:"
+  echo "  Next steps:"
+  echo "    1. Edit the agent instructions:"
+  echo "       $AGENTS_DIR/$AGENT_ID/${AGENT_ID}-agent.yaml.envsubst"
   echo ""
-  echo "  1. Edit the agent instructions in:"
-  echo "     $AGENTS_DIR/$AGENT_ID/${AGENT_ID}-agent.yaml.envsubst"
-  echo ""
-  echo "  2. Run envsubst, apply the ConfigMap, and restart."
+  echo "    2. Deploy:"
+  echo "       ./scripts/add-agent.sh $AGENT_ID"
   echo ""
   exit 0
 fi

@@ -63,26 +63,34 @@ kubectl port-forward svc/openclaw 18789:18789 -n <prefix>-openclaw
 | Script | Purpose |
 |--------|---------|
 | `./scripts/setup.sh` | Deploy OpenClaw (add `--with-a2a` for A2A) |
-| `./scripts/setup-agents.sh` | Deploy additional agents + skills |
-| `./scripts/setup-nps-agent.sh` | Deploy NPS Agent (separate namespace) |
-| `./scripts/create-cluster.sh` | Create a KinD cluster for local testing |
+| `./scripts/add-agent.sh` | Create and deploy a custom agent |
 | `./scripts/export-config.sh` | Export live config from running pod |
 | `./scripts/update-jobs.sh` | Update cron jobs without full re-deploy |
+| `./scripts/create-cluster.sh` | Create a KinD cluster for local testing |
 | `./scripts/teardown.sh` | Remove everything |
-| `./scripts/cleanup-legacy-generated.sh` | Remove old in-place generated files |
 
 All scripts accept `--k8s` for vanilla Kubernetes.
 
-### Additional Agents
+### Adding Agents
 
-Deploy specialized agents (Resource Optimizer, MLOps Monitor, NPS) with RBAC, CronJobs, and scheduled tasks:
+Write agent instructions with your AI assistant, then deploy with one command:
 
 ```bash
-./scripts/setup-agents.sh           # OpenShift
-./scripts/setup-agents.sh --k8s     # Kubernetes
+# AI creates the files in agents/openclaw/agents/repo-watcher/
+./scripts/add-agent.sh repo-watcher
 ```
 
-See [docs/ADDITIONAL-AGENTS.md](docs/ADDITIONAL-AGENTS.md) for details on each agent, creating your own, and the NPS evaluation framework.
+The included `repo-watcher` agent monitors the openclaw/openclaw GitHub repo
+for recent commits and PRs every 2 hours, using `curl` and `jq` against the
+public GitHub API. It's a good starting point for your own agents.
+
+Or scaffold from the template interactively:
+
+```bash
+./scripts/add-agent.sh
+```
+
+See [docs/TEAMMATE-QUICKSTART.md](docs/TEAMMATE-QUICKSTART.md) for the full walkthrough and [agents/openclaw/agents/_template/README.md](agents/openclaw/agents/_template/README.md) for the template reference.
 
 ### A2A (Agent-to-Agent) Communication
 

@@ -57,16 +57,20 @@ kubectl port-forward svc/openclaw 18789:18789 -n <prefix>-openclaw
 # Open http://localhost:18789
 ```
 
-## Step 3: Deploy Additional Agents (Optional)
+## Step 3: Add Your Own Agents
 
-To add the resource-optimizer and mlops-monitor agents:
+Deploy the included repo-watcher agent to try it out:
 
 ```bash
-./scripts/setup-agents.sh           # OpenShift
-./scripts/setup-agents.sh --k8s     # Kubernetes
+./scripts/add-agent.sh repo-watcher
 ```
 
-See [ADDITIONAL-AGENTS.md](ADDITIONAL-AGENTS.md) for details.
+This deploys an agent that monitors the openclaw/openclaw GitHub repo for
+recent commits and PRs every 2 hours, then reports findings to your default
+agent. It uses `curl` and `jq` against the public GitHub API.
+
+See [Create Your Own Agent](#create-your-own-agent) below for how to build
+your own agents with AI assistance.
 
 ## Step 4: Enable A2A Communication (Optional, Advanced)
 
@@ -86,53 +90,82 @@ On **OpenShift**, `setup.sh --with-a2a` automatically applies the AuthBridge SCC
 
 See [A2A-ARCHITECTURE.md](A2A-ARCHITECTURE.md) for the full architecture.
 
-## Upgrading from a Previous Clone
-
-If you cloned before the `generated/` directory change, you may have old generated `.yaml` files sitting next to their `.envsubst` templates. These are harmless (`.gitignore` covers them) but you can clean them up:
-
-```bash
-./scripts/cleanup-legacy-generated.sh            # Dry run — shows what would be deleted
-./scripts/cleanup-legacy-generated.sh --delete    # Actually delete them
-```
-
-Then re-run `setup.sh` to rebuild everything into `generated/`.
-
 ## Create Your Own Agent
 
-Scaffold a new agent with one command:
+Two ways to add an agent. Both end with the same deploy command.
 
-```bash
-./scripts/add-agent.sh
+### Option A: Write It with AI (recommended)
+
+Ask your AI assistant (Claude Code, Copilot, etc.) to create the agent for you.
+Point it at `agents/openclaw/agents/repo-watcher/` as a reference and describe
+what you want.
+
+**Example prompt:**
+
+> Look at agents/openclaw/agents/repo-watcher/ for the structure. Create a new
+> agent called "pr-reviewer" that reviews open PRs in our repo every morning
+> and posts a summary to my default agent.
+
+Your AI creates two files:
+```
+agents/openclaw/agents/pr-reviewer/
+  pr-reviewer-agent.yaml.envsubst    # Agent instructions + metadata
+  JOB.md                              # Cron schedule (optional)
 ```
 
-It prompts for an ID, display name, description, emoji, and color, then generates the agent files from a template. It also prints the JSON snippet to register the agent in the config.
+Then deploy:
+```bash
+./scripts/add-agent.sh pr-reviewer
+```
 
-For the full template reference and manual setup, see [agents/openclaw/agents/_template/README.md](../agents/openclaw/agents/_template/README.md).
+The script detects the existing files, skips scaffolding, and handles everything:
+envsubst, ConfigMap, gateway registration, workspace setup, restart, and cron jobs.
 
-## Add a Scheduled Job
+### Option B: Start from Template
 
-Give any agent a scheduled task by creating a `JOB.md` file in its directory:
+```bash
+./scripts/add-agent.sh --scaffold-only myagent
+```
+
+This creates the directory with a template containing `REPLACE_` placeholders.
+Edit them, then deploy:
+
+```bash
+./scripts/add-agent.sh myagent
+```
+
+### What the Agent Files Look Like
+
+The `.envsubst` file is a Kubernetes ConfigMap with these keys:
+
+| Key | Purpose |
+|-----|---------|
+| `AGENTS.md` | Agent instructions (who it is, what tools to use, how to report) |
+| `agent.json` | Metadata (name, emoji, color, capabilities) |
+
+Use `${OPENCLAW_PREFIX}` and `${OPENCLAW_NAMESPACE}` for values that vary per
+deployment. See [agents/openclaw/agents/_template/README.md](../agents/openclaw/agents/_template/README.md)
+for the full reference.
+
+### Adding a Scheduled Job
+
+Include a `JOB.md` in your agent's directory:
 
 ```markdown
 ---
-id: myagent-daily-check
-schedule: "0 9 * * *"
+id: security-scanner-job
+schedule: "0 */4 * * *"
 tz: UTC
 ---
 
-Your job instructions here. This message is sent to the agent
-when the job fires.
+Check deployed images for known CVEs. Report critical findings
+to ${OPENCLAW_PREFIX}_${SHADOWMAN_CUSTOM_NAME} via sessions_send.
 ```
 
-Then deploy the job:
+The deploy script detects the JOB.md and sets up the cron automatically.
 
-```bash
-./scripts/update-jobs.sh           # OpenShift
-./scripts/update-jobs.sh --k8s     # Kubernetes
-```
-
-Preview without deploying:
-
-```bash
-./scripts/update-jobs.sh --dry-run
-```
+| Schedule | Expression |
+|----------|-----------|
+| Every 2 hours | `0 */2 * * *` |
+| Every day at 9 AM UTC | `0 9 * * *` |
+| Weekdays at 9 AM and 5 PM | `0 9,17 * * 1-5` |
