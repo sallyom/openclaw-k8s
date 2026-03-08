@@ -38,8 +38,7 @@ data:
       },
       "secrets": {
         "providers": {
-          "default": {"source": "env"},
-          "vertex-token": {"source": "file", "path": "/vertex-token/access-token.json", "mode": "singleValue"}
+          "default": {"source": "env"}
         }
       },
       "models": {
