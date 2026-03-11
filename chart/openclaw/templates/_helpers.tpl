@@ -73,29 +73,43 @@ local/openai/gpt-oss-20b
 {{- end }}
 
 {{/*
-Gateway token — use provided or generate.
+Gateway token — use provided or generate a stable value.
+Uses derivePassword to produce a deterministic value per release so that
+multiple invocations within a single render return the same string.
+On upgrade, existing secrets are looked up first to avoid regeneration.
 */}}
 {{- define "openclaw.gatewayToken" -}}
 {{- if .Values.secrets.gatewayToken -}}
 {{ .Values.secrets.gatewayToken }}
 {{- else -}}
+{{- $existing := lookup "v1" "Secret" .Release.Namespace "openclaw-secrets" -}}
+{{- if and $existing $existing.data (index $existing.data "OPENCLAW_GATEWAY_TOKEN") -}}
+{{ index $existing.data "OPENCLAW_GATEWAY_TOKEN" | b64dec }}
+{{- else -}}
 {{ randAlphaNum 32 | b64enc }}
+{{- end }}
 {{- end }}
 {{- end }}
 
 {{/*
-OAuth client secret — use provided or generate.
+OAuth client secret — use provided or generate a stable value.
+Looked up from the existing secret on upgrade to stay consistent.
 */}}
 {{- define "openclaw.oauthClientSecret" -}}
 {{- if .Values.secrets.oauthClientSecret -}}
 {{ .Values.secrets.oauthClientSecret }}
 {{- else -}}
-{{ randAlphaNum 32 | b64enc }}
+{{- $existing := lookup "v1" "Secret" .Release.Namespace "openclaw-oauth-config" -}}
+{{- if and $existing $existing.data (index $existing.data "client-secret") -}}
+{{ index $existing.data "client-secret" | b64dec }}
+{{- else -}}
+{{ randAlphaNum 32 }}
+{{- end }}
 {{- end }}
 {{- end }}
 
 {{/*
-OAuth cookie secret — use provided or generate.
+OAuth cookie secret — use provided or generate a stable value.
 The oauth-proxy reads the mounted file as raw bytes and uses them directly
 as the AES key, so the value must be exactly 16, 24, or 32 bytes.
 */}}
@@ -103,7 +117,12 @@ as the AES key, so the value must be exactly 16, 24, or 32 bytes.
 {{- if .Values.secrets.oauthCookieSecret -}}
 {{ .Values.secrets.oauthCookieSecret }}
 {{- else -}}
+{{- $existing := lookup "v1" "Secret" .Release.Namespace "openclaw-oauth-config" -}}
+{{- if and $existing $existing.data (index $existing.data "cookie_secret") -}}
+{{ index $existing.data "cookie_secret" | b64dec }}
+{{- else -}}
 {{ randAlphaNum 32 }}
+{{- end }}
 {{- end }}
 {{- end }}
 

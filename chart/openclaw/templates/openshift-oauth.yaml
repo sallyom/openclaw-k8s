@@ -20,15 +20,4 @@ subjects:
   - kind: ServiceAccount
     name: openclaw-oauth-proxy
     namespace: {{ .Release.Namespace }}
----
-apiVersion: oauth.openshift.io/v1
-kind: OAuthClient
-metadata:
-  name: {{ .Release.Namespace }}
-  labels:
-    {{- include "openclaw.labels" . | nindent 4 }}
-secret: {{ include "openclaw.oauthClientSecret" . | quote }}
-redirectURIs:
-  - https://openclaw-{{ .Release.Namespace }}.{{ .Values.clusterDomain }}/oauth/callback
-grantMethod: auto
 {{- end }}
