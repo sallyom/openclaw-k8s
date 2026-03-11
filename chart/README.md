@@ -36,7 +36,8 @@ helm install openclaw chart/openclaw/ \
   --set model.id="qwen35-9b" \
   --set model.name="Qwen35-9b" \
   --set model.contextWindow=60000 \
-  --set model.maxTokens=60000
+  --set model.maxTokens=60000 \
+  --set model.apiKey="your-maas-token-here"
 ```
 
 **Kubernetes:**

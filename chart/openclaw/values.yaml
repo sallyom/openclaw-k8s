@@ -33,6 +33,8 @@ model:
   endpoint: "http://vllm.openclaw-llms.svc.cluster.local/v1"
   # -- API protocol: "openai-responses" or "openai-completions"
   api: "openai-responses"
+  # -- API key for the model endpoint (if required)
+  apiKey: ""
   # -- Local model identity (must match what the endpoint serves)
   id: "openai/gpt-oss-20b"
   name: "GPT OSS 20B"

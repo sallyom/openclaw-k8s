@@ -42,7 +42,7 @@ data:
           "local": {
             "baseUrl": {{ .Values.model.endpoint | quote }},
             "api": {{ .Values.model.api | quote }},
-            "apiKey": "fakekey",
+            "apiKey": {{ (.Values.model.apiKey | default "fakekey") | quote }},
             "auth": "token",
             "models": [
               {
